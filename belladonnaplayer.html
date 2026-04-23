@@ -1749,22 +1749,47 @@ function toggleBingo(id, i) {
 
 // ═══════════════ LIBRARY ═══════════════
 async function loadFolder() {
-  if (!('showDirectoryPicker' in window)) { toast('File System Access not supported in this browser'); return; }
-  try {
-    const dir = await window.showDirectoryPicker();
-    const tracks = [];
-    for await (const [name,handle] of dir.entries()) {
-      if (handle.kind==='file' && /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(name)) {
-        const file = await handle.getFile();
-        const t = await parseTrack(file, handle);
-        tracks.push(t);
-        S.fileHandles[t.id] = handle;
+  if ('showDirectoryPicker' in window) {
+    // Chrome/Edge: full directory picker with persistent handles
+    try {
+      const dir = await window.showDirectoryPicker();
+      const tracks = [];
+      for await (const [name,handle] of dir.entries()) {
+        if (handle.kind==='file' && /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(name)) {
+          const file = await handle.getFile();
+          const t = await parseTrack(file, handle);
+          tracks.push(t);
+          S.fileHandles[t.id] = handle;
+        }
       }
-    }
-    S.library=[...S.library,...tracks];
-    renderLibrary();
-    toast(`Loaded ${tracks.length} tracks`);
-  } catch(e) { if(e.name!=='AbortError') console.error(e); }
+      S.library=[...S.library,...tracks];
+      renderLibrary();
+      toast('Loaded ' + tracks.length + ' tracks');
+    } catch(e) { if(e.name!=='AbortError') console.error(e); }
+  } else {
+    // Safari/Firefox fallback: file input with webkitdirectory
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = 'audio/*,.mp3,.wav,.flac,.aac,.ogg,.m4a';
+    input.setAttribute('webkitdirectory', '');
+    input.onchange = async function() {
+      const files = Array.from(input.files).filter(f => /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(f.name));
+      if (!files.length) { toast('No audio files found in that folder'); return; }
+      toast('Loading ' + files.length + ' tracks...');
+      const tracks = [];
+      for (const file of files) {
+        const t = await parseTrack(file, null);
+        // Store file object directly for Safari
+        S.fileHandles[t.id] = { _safariFile: file };
+        tracks.push(t);
+      }
+      S.library = [...S.library, ...tracks];
+      renderLibrary();
+      toast('Loaded ' + tracks.length + ' tracks');
+    };
+    input.click();
+  }
 }
 
 async function parseTrack(file, handle) {
@@ -1859,7 +1884,8 @@ async function playAt(idx) {
   const handle=S.fileHandles[t.id];
   if(!handle){toast('Load the music folder first (📂)');return;}
 
-  const file=await handle.getFile();
+  // Support both Chrome file handles and Safari file objects
+  const file = handle._safariFile ? handle._safariFile : await handle.getFile();
   const url=URL.createObjectURL(file);
 
   const isBingo = pl.type==='bingo'||t.bingoFlag;

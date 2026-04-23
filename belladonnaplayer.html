@@ -1489,11 +1489,24 @@ let audA = new Audio(), audB = new Audio();
 let active = audA, inactive = audB;
 let progInterval = null, timerTimeout = null, xfadeTimeout = null;
 let isFading = false;
+let activeFadeInterval = null; // track running fade so we can cancel it
 
 audA.volume = S.volume; audB.volume = 0;
 
-audA.addEventListener('ended', () => onTrackEnded());
+audA.addEventListener('ended', () => { if (active === audA) onTrackEnded(); });
 audB.addEventListener('ended', () => { if (active === audB) onTrackEnded(); });
+
+function stopAllAudio() {
+  // Kill any running fade
+  if (activeFadeInterval) { clearInterval(activeFadeInterval); activeFadeInterval = null; }
+  isFading = false;
+  document.getElementById('xfade-ind').classList.remove('visible');
+  // Stop both elements completely
+  audA.pause(); audA.src = ''; audA.volume = 0;
+  audB.pause(); audB.src = ''; audB.volume = 0;
+  // Reset to clean state
+  active = audA; inactive = audB;
+}
 
 function onTrackEnded() {
   if (S.freePlay || S.settings.timer === 0) {
@@ -1538,6 +1551,11 @@ async function doLogin() {
         if (d.password === p && d.active !== false) user = { username:u, name:d.name, role:d.role||'host' };
       }
     } catch(e) {}
+  }
+  // Check local session users (created without Firebase)
+  if (!user && localUsers[u]) {
+    const d = localUsers[u];
+    if (d.password === p && d.active !== false) user = { username:u, name:d.name, role:d.role||'host' };
   }
   if (!user) { err.style.display='block'; return; }
 
@@ -1597,6 +1615,7 @@ function enterApp() {
   loadPlaylists();
   loadSettings();
   loadCuePoints();
+  loadLibraryMeta();
   if (S.isAdmin) loadAdminData();
 }
 
@@ -1623,12 +1642,20 @@ function showView(v) {
 
 // ═══════════════ PLAYLISTS ═══════════════
 async function loadPlaylists() {
-  if (!db) return;
+  if (db) {
+    try {
+      const snap = await db.collection('playlists').get();
+      S.playlists = snap.docs.map(d=>({id:d.id,...d.data()}));
+      renderSidePlaylists();
+      return;
+    } catch(e){}
+  }
+  // Fallback: localStorage
   try {
-    const snap = await db.collection('playlists').get();
-    S.playlists = snap.docs.map(d=>({id:d.id,...d.data()}));
-    renderSidePlaylists();
+    const saved = localStorage.getItem('bella_playlists');
+    if (saved) S.playlists = JSON.parse(saved);
   } catch(e){}
+  renderSidePlaylists();
 }
 
 function renderSidePlaylists() {
@@ -1718,15 +1745,22 @@ async function createPlaylist() {
     try { const r=await db.collection('playlists').add(pl); pl.id=r.id; } catch(e){}
   } else { pl.id='loc_'+Date.now(); }
   S.playlists.push(pl);
+  try { localStorage.setItem('bella_playlists', JSON.stringify(S.playlists)); } catch(e){}
   renderSidePlaylists();
   closeModal('modal-new-pl');
-  toast(`Playlist "${name}" created`);
+  toast('Playlist "' + name + '" created');
   selectPL(pl.id);
 }
 
 async function savePL(pl) {
-  if (!db||!pl?.id) return;
-  try { await db.collection('playlists').doc(pl.id).set(pl); } catch(e){}
+  if (!pl?.id) return;
+  if (db) {
+    try { await db.collection('playlists').doc(pl.id).set(pl); } catch(e){}
+  }
+  // Always also save to localStorage as backup
+  try {
+    localStorage.setItem('bella_playlists', JSON.stringify(S.playlists));
+  } catch(e){}
 }
 
 function removeTrack(i) {
@@ -1748,6 +1782,29 @@ function toggleBingo(id, i) {
 }
 
 // ═══════════════ LIBRARY ═══════════════
+function saveLibraryMeta() {
+  try {
+    // Save track metadata only (not file handles — those are runtime only)
+    const meta = S.library.map(t => ({
+      id:t.id, filename:t.filename, title:t.title, artist:t.artist,
+      album:t.album, duration:t.duration, bpm:t.bpm, artUrl:t.artUrl
+    }));
+    localStorage.setItem('bella_library', JSON.stringify(meta));
+  } catch(e){}
+}
+
+function loadLibraryMeta() {
+  try {
+    const saved = localStorage.getItem('bella_library');
+    if (!saved) return;
+    const meta = JSON.parse(saved);
+    // Restore metadata — file handles will be null until folder is reloaded
+    S.library = meta;
+    renderLibrary();
+    if (meta.length) toast(meta.length + ' tracks restored — reload folder to play');
+  } catch(e){}
+}
+
 async function loadFolder() {
   if ('showDirectoryPicker' in window) {
     // Chrome/Edge: full directory picker with persistent handles
@@ -1763,6 +1820,7 @@ async function loadFolder() {
         }
       }
       S.library=[...S.library,...tracks];
+      saveLibraryMeta();
       renderLibrary();
       toast('Loaded ' + tracks.length + ' tracks');
     } catch(e) { if(e.name!=='AbortError') console.error(e); }
@@ -1785,6 +1843,7 @@ async function loadFolder() {
         tracks.push(t);
       }
       S.library = [...S.library, ...tracks];
+      saveLibraryMeta();
       renderLibrary();
       toast('Loaded ' + tracks.length + ' tracks');
     };
@@ -1910,7 +1969,7 @@ async function playAt(idx) {
 
 function directPlay(url, start, t, end) {
   clearTimers();
-  active.pause();
+  stopAllAudio();
   active.src=url;
   active.currentTime=start;
   active.volume=S.volume;
@@ -1923,42 +1982,57 @@ function directPlay(url, start, t, end) {
 
 async function doCrossfade(url, start, t, end) {
   const dur=(S.settings.crossfade||8)*1000;
+
+  // Cancel any in-progress fade cleanly
+  if (activeFadeInterval) { clearInterval(activeFadeInterval); activeFadeInterval = null; }
+
+  // Identify which element is outgoing (currently making sound)
+  const outgoing = active;
+  const incoming = active===audA ? audB : audA;
+
+  // Stop incoming from any previous use
+  incoming.pause(); incoming.src=''; incoming.volume=0;
+
   isFading=true;
   document.getElementById('xfade-ind').classList.add('visible');
 
-  const incoming = active===audA ? audB : audA;
   incoming.src=url; incoming.currentTime=start; incoming.volume=0;
   await incoming.play().catch(console.error);
 
-  const steps=50; const step=dur/steps;
+  active=incoming; inactive=outgoing;
+
+  const steps=50; const stepMs=dur/steps;
   let n=0;
-  const fade=setInterval(()=>{
+  activeFadeInterval=setInterval(()=>{
     n++;
     const p=n/steps;
     const e=p<0.5?2*p*p:-1+(4-2*p)*p;
     incoming.volume=Math.min(S.volume*e,S.volume);
-    active.volume=Math.max(S.volume*(1-e),0);
+    outgoing.volume=Math.max(S.volume*(1-e),0);
     if(n>=steps){
-      clearInterval(fade);
-      active.pause(); active.src=''; active.volume=0;
-      active=incoming;
+      clearInterval(activeFadeInterval); activeFadeInterval=null;
+      outgoing.pause(); outgoing.src=''; outgoing.volume=0;
       isFading=false;
       document.getElementById('xfade-ind').classList.remove('visible');
       clearTimers();
       scheduleAdvance(t,start,end);
     }
-  },step);
+  },stepMs);
 
-  inactive=active; active=incoming;
   startProg();
   S.isPlaying=true; updatePlayBtn();
 }
 
 function doCleanSwitch(url, start, t, end) {
+  if (activeFadeInterval) { clearInterval(activeFadeInterval); activeFadeInterval=null; }
   const out=active; const steps=20; const stepMs=400/steps; let n=0;
-  const fo=setInterval(()=>{
+  activeFadeInterval=setInterval(()=>{
     n++; out.volume=Math.max(S.volume*(1-n/steps),0);
-    if(n>=steps){ clearInterval(fo); out.pause(); directPlay(url,start,t,end); }
+    if(n>=steps){
+      clearInterval(activeFadeInterval); activeFadeInterval=null;
+      out.pause(); out.src=''; out.volume=0;
+      directPlay(url,start,t,end);
+    }
   },stepMs);
 }
 
@@ -2317,24 +2391,67 @@ function renderUsers(users, activeSessions) {
     </tr>`).join('');
 }
 
+// Local user store — used when Firebase is not configured
+const localUsers = {};
+
 async function createUser() {
   const name=document.getElementById('nu-name').value.trim();
   const username=document.getElementById('nu-user').value.trim().toLowerCase();
   const password=document.getElementById('nu-pass').value;
-  if(!name||!username||!password) return;
+  if(!name||!username||!password){
+    toast('Fill in all three fields');return;
+  }
+  const userData={name,password,role:'host',active:true,created:new Date().toISOString()};
   if(db){
     try{
-      await db.collection('users').doc(username).set({name,password,role:'host',active:true,created:new Date().toISOString()});
-      toast(`Host "${name}" created`);
+      await db.collection('users').doc(username).set(userData);
+      toast('Host "' + name + '" created — synced to Firebase');
       closeModal('modal-new-user');
       loadAdminData();
-    }catch(e){console.error(e);}
+      return;
+    }catch(e){
+      console.error('Firebase write failed:',e);
+      toast('Firebase error — saved locally only');
+    }
   }
+  // No Firebase — save locally for this session
+  localUsers[username]=userData;
+  toast('Host "' + name + '" created (local session only — connect Firebase to persist)');
+  closeModal('modal-new-user');
+  renderLocalUsers();
+}
+
+function renderLocalUsers() {
+  const users = Object.entries(localUsers).map(([id,u])=>({id,...u}));
+  if(!users.length) return;
+  const tbody=document.getElementById('adm-users');
+  const existing=tbody.innerHTML;
+  tbody.innerHTML = existing + users.map(u=>`
+    <tr>
+      <td>${u.name}</td>
+      <td style="font-size:11px;font-style:italic;">host</td>
+      <td><span class="dot-off"></span> Local</td>
+      <td style="text-align:right;"><button class="t-btn" style="opacity:1;" onclick="deleteLocalUser('${u.id}')">✕</button></td>
+    </tr>`).join('');
+}
+
+function deleteLocalUser(id) {
+  delete localUsers[id];
+  toast('User removed');
+  renderLocalUsers();
 }
 
 async function deleteUser(id) {
-  if(!confirm(`Delete user "${id}"?`)) return;
-  if(db){ try{await db.collection('users').doc(id).delete();toast('User deleted');loadAdminData();}catch(e){} }
+  if(!confirm('Delete user "' + id + '"?')) return;
+  if(db){
+    try{
+      await db.collection('users').doc(id).delete();
+      toast('User deleted');
+      loadAdminData();
+    }catch(e){ toast('Delete failed — check Firebase'); }
+  } else {
+    deleteLocalUser(id);
+  }
 }
 
 // ═══════════════ UTILS ═══════════════

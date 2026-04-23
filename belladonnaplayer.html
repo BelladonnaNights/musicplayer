@@ -1434,21 +1434,32 @@ body::after {
 })();
 
 // ═══════════════ FIREBASE ═══════════════
-// REPLACE THIS CONFIG WITH YOUR FIREBASE PROJECT CONFIG
+// Paste your Firebase config values below once you have them.
+// Leave blank to run in local mode (admin login still works).
 const FB_CONFIG = {
-  apiKey: "REPLACE_WITH_YOUR_API_KEY",
-  authDomain: "REPLACE.firebaseapp.com",
-  projectId: "REPLACE_WITH_PROJECT_ID",
-  storageBucket: "REPLACE.appspot.com",
-  messagingSenderId: "REPLACE",
-  appId: "REPLACE"
+  apiKey: "",
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: ""
 };
 
 let db = null;
-try {
-  firebase.initializeApp(FB_CONFIG);
-  db = firebase.firestore();
-} catch(e) { console.warn('Firebase not configured — local mode'); }
+(function() {
+  try {
+    if (!FB_CONFIG.apiKey || !FB_CONFIG.projectId) {
+      console.warn('Belladonna: no Firebase config — local mode only');
+      return;
+    }
+    firebase.initializeApp(FB_CONFIG);
+    db = firebase.firestore();
+    console.log('Belladonna: Firebase connected');
+  } catch(e) {
+    console.warn('Belladonna: Firebase error — local mode', e.message);
+    db = null;
+  }
+})();
 
 // ═══════════════ STATE ═══════════════
 const S = {
@@ -1546,7 +1557,14 @@ async function logSession(user, status) {
     status,
     location: 'Unknown'
   };
-  try { const r = await fetch('https://ipapi.co/json/'); const j = await r.json(); data.location = `${j.city}, ${j.region}`; } catch(e){}
+  try {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 2000);
+    const r = await fetch('https://ipapi.co/json/', {signal: ctrl.signal});
+    clearTimeout(tid);
+    const j = await r.json();
+    data.location = (j.city || '') + (j.region ? ', ' + j.region : '');
+  } catch(e) { data.location = 'Unknown'; }
   if (db) {
     try { const ref = await db.collection('sessions').add(data); S.sessionId = ref.id; } catch(e){}
   }

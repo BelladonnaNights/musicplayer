@@ -1065,6 +1065,50 @@ body::after {
 }
 .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
+/* Search/Sort toolbar */
+.sort-bar {
+  display:flex; align-items:center; gap:8px;
+  margin-bottom:16px; flex-wrap:wrap;
+}
+.search-input {
+  flex:1; min-width:180px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:9px 14px;
+  color:var(--text-primary);
+  font-family:var(--font-body);
+  font-size:15px; outline:none;
+  transition:var(--transition);
+}
+.search-input:focus { border-color:var(--accent-dim); box-shadow:0 0 0 3px var(--accent-glow); }
+.search-input::placeholder { color:var(--text-ghost); }
+.sort-btn {
+  display:flex; align-items:center; gap:5px;
+  padding:8px 12px;
+  border-radius:var(--radius);
+  border:1px solid var(--border);
+  background:rgba(255,255,255,0.03);
+  color:var(--text-secondary);
+  font-family:var(--font-heading);
+  font-size:10px; letter-spacing:0.1em;
+  cursor:pointer; transition:var(--transition);
+  white-space:nowrap;
+}
+.sort-btn:hover { border-color:var(--border-glow); color:var(--text-primary); }
+.sort-btn.active { background:var(--accent-glow); border-color:rgba(168,85,247,0.3); color:var(--accent-bright); }
+.col-sort {
+  cursor:pointer; user-select:none;
+  display:flex; align-items:center; gap:4px;
+}
+.col-sort:hover { color:var(--text-primary); }
+.col-sort.active { color:var(--accent-bright); }
+.sort-arrow { font-size:10px; opacity:0.7; }
+
+/* Drag and drop */
+.track-row.drag-over { border-color:var(--accent-dim); background:var(--accent-glow); }
+.track-row.dragging { opacity:0.4; }
+
 /* Responsive */
 @media(max-width:680px) {
   .track-table-head, .track-row {
@@ -1177,6 +1221,14 @@ body::after {
               <button class="btn-sm" id="btn-mode" onclick="cycleFadeMode()">↔ Crossfade</button>
             </div>
           </div>
+          <div class="sort-bar" id="pl-sort-bar" style="display:none;">
+            <input class="search-input" id="pl-search" placeholder="Search in playlist…" oninput="setPlSearch(this.value)" style="max-width:300px;">
+            <button class="sort-btn" onclick="setPlSort('index')"><span id="pl-sort-index" class="col-sort active"># <span class="sort-arrow">↑</span></span></button>
+            <button class="sort-btn" onclick="setPlSort('title')"><span id="pl-sort-title" class="col-sort">Title</span></button>
+            <button class="sort-btn" onclick="setPlSort('artist')"><span id="pl-sort-artist" class="col-sort">Artist</span></button>
+            <button class="sort-btn" onclick="setPlSort('duration')"><span id="pl-sort-duration" class="col-sort">Length</span></button>
+            <button class="sort-btn" onclick="setPlSort('bpm')"><span id="pl-sort-bpm" class="col-sort">BPM</span></button>
+          </div>
           <div id="track-list-wrap"></div>
         </div>
       </div>
@@ -1185,11 +1237,19 @@ body::after {
       <div class="view" id="view-library">
         <div class="view-scroll">
           <div class="pl-title">Library</div>
-          <div class="pl-meta" style="margin-top:4px;margin-bottom:22px;" id="lib-count">No tracks loaded</div>
-          <div class="drop-zone" onclick="loadFolder()" id="drop-zone">
-            <div class="drop-zone-icon">📂</div>
-            <div class="drop-zone-title">Load Music Folder</div>
+          <div class="pl-meta" style="margin-top:4px;margin-bottom:18px;" id="lib-count">No tracks loaded</div>
+          <div class="drop-zone" onclick="loadFolder()" id="drop-zone" style="padding:28px;margin-bottom:18px;">
+            <div class="drop-zone-icon" style="font-size:28px;margin-bottom:6px;">📂</div>
+            <div class="drop-zone-title" style="font-size:13px;">Load Music Folder</div>
             <div class="drop-zone-desc">Files stay local on this device — nothing is uploaded or streamed.</div>
+          </div>
+          <div class="sort-bar">
+            <input class="search-input" id="lib-search" placeholder="Search title, artist, album…" oninput="setLibSearch(this.value)">
+            <button class="sort-btn" onclick="setLibSort('title')"><span id="lib-sort-title" class="col-sort active">Title <span class="sort-arrow">↑</span></span></button>
+            <button class="sort-btn" onclick="setLibSort('artist')"><span id="lib-sort-artist" class="col-sort">Artist</span></button>
+            <button class="sort-btn" onclick="setLibSort('album')"><span id="lib-sort-album" class="col-sort">Album</span></button>
+            <button class="sort-btn" onclick="setLibSort('duration')"><span id="lib-sort-duration" class="col-sort">Length</span></button>
+            <button class="sort-btn" onclick="setLibSort('bpm')"><span id="lib-sort-bpm" class="col-sort">BPM</span></button>
           </div>
           <div id="lib-list"></div>
         </div>
@@ -1203,7 +1263,7 @@ body::after {
           <div class="admin-grid">
             <div class="admin-card">
               <div class="admin-card-title">⚡ Active Sessions</div>
-              <div id="adm-active">Loading…</div>
+              <div id="adm-active"><div style="color:var(--text-muted);font-size:13px;font-style:italic;">☽ No souls currently logged in</div></div>
             </div>
             <div class="admin-card">
               <div class="admin-card-title">👤 Host Accounts
@@ -1312,19 +1372,7 @@ body::after {
 
 </div><!-- /screen-app -->
 
-<!-- ═══ JUKEBOX ═══ -->
-<div id="jukebox">
-  <div class="jb-bg" id="jb-bg"></div>
-  <button class="jb-close" onclick="toggleJukebox()">✕</button>
-  <div class="jb-brand">Belladonna Audio Alchemies</div>
-  <div class="jb-art" id="jb-art"><div class="jb-art-ph">💀</div></div>
-  <div class="jb-title" id="jb-title">Nothing playing</div>
-  <div class="jb-artist" id="jb-artist">Belladonna Audio</div>
-  <div class="jb-next" id="jb-next" style="display:none;">
-    <div class="jb-next-label">Up Next</div>
-    <div class="jb-next-val" id="jb-next-val"></div>
-  </div>
-</div>
+<!-- Jukebox is now a popup window — no overlay needed -->
 
 <!-- ═══ MODALS ═══ -->
 <!-- New Playlist -->
@@ -1481,7 +1529,13 @@ const S = {
   settings: { crossfade: 8, timer: 0, bpmMatch: true, cleanSkip: true },
   sessionId: null,
   sessionStart: null,
-  _allSessions: []
+  _allSessions: [],
+  libSearch: '',
+  libSort: 'title',
+  libSortDir: 1,
+  plSearch: '',
+  plSort: 'index',
+  plSortDir: 1
 };
 
 // ═══════════════ AUDIO ENGINE ═══════════════
@@ -1683,56 +1737,147 @@ async function selectPL(id) {
   document.getElementById('topbar-title').textContent = pl.name;
 
   document.getElementById('btn-shuffle').classList.toggle('active', S.shuffle);
+  S.plSearch=''; S.plSort='index'; S.plSortDir=1;
+  const ps = document.getElementById('pl-search');
+  if (ps) ps.value='';
   renderSidePlaylists();
   renderTrackList();
   showView('player');
 }
 
+function getFilteredPlaylist() {
+  const pl = S.currentPL;
+  if (!pl?.tracks) return [];
+  let indexed = pl.tracks.map((t,i)=>({...t, _origIdx:i}));
+  const q = S.plSearch.toLowerCase().trim();
+  if (q) indexed = indexed.filter(t =>
+    (t.title||'').toLowerCase().includes(q) ||
+    (t.artist||'').toLowerCase().includes(q) ||
+    (t.album||'').toLowerCase().includes(q)
+  );
+  if (S.plSort !== 'index') {
+    indexed.sort((a,b) => {
+      let av, bv;
+      if (S.plSort==='title') { av=(a.title||'').toLowerCase(); bv=(b.title||'').toLowerCase(); }
+      else if (S.plSort==='artist') { av=(a.artist||'').toLowerCase(); bv=(b.artist||'').toLowerCase(); }
+      else if (S.plSort==='duration') { av=a.duration||0; bv=b.duration||0; }
+      else if (S.plSort==='bpm') { av=a.bpm||0; bv=b.bpm||0; }
+      if (av < bv) return -1 * S.plSortDir;
+      if (av > bv) return 1 * S.plSortDir;
+      return 0;
+    });
+  }
+  return indexed;
+}
+
+function setPlSearch(v) { S.plSearch=v; renderTrackList(); }
+
+function setPlSort(key) {
+  if (S.plSort===key) { S.plSortDir *= -1; }
+  else { S.plSort=key; S.plSortDir=1; }
+  updatePlSortBtns();
+  renderTrackList();
+}
+
+function updatePlSortBtns() {
+  ['index','title','artist','duration','bpm'].forEach(k => {
+    const el = document.getElementById('pl-sort-'+k);
+    if (!el) return;
+    const active = S.plSort===k;
+    el.classList.toggle('active', active);
+    const label = k==='index'?'#':k.charAt(0).toUpperCase()+k.slice(1);
+    el.innerHTML = label + (active ? ' <span class="sort-arrow">'+(S.plSortDir===1?'↑':'↓')+'</span>' : '');
+  });
+}
+
+let dragSrcIdx = null;
+
 function renderTrackList() {
   const wrap = document.getElementById('track-list-wrap');
   const pl = S.currentPL;
+  const sortBar = document.getElementById('pl-sort-bar');
+  if (sortBar) sortBar.style.display = pl?.tracks?.length ? 'flex' : 'none';
+
   if (!pl?.tracks?.length) {
-    wrap.innerHTML=`<div class="empty"><div class="empty-icon">🎵</div><div class="empty-title">Playlist Empty</div><div class="empty-desc">Add tracks from the Library view.</div></div>`;
+    wrap.innerHTML='<div class="empty"><div class="empty-icon">🎵</div><div class="empty-title">Playlist Empty</div><div class="empty-desc">Add tracks from the Library view.</div></div>';
     return;
   }
-  wrap.innerHTML = `
-    <div class="track-table-head">
-      <div>#</div><div></div><div>Title</div><div>Album</div><div>BPM</div>
-      <div style="text-align:right">Time</div><div></div>
-    </div>
-    <div id="track-rows">${pl.tracks.map((t,i)=>renderRow(t,i)).join('')}</div>`;
+  const tracks = getFilteredPlaylist();
+  if (!tracks.length) {
+    wrap.innerHTML='<div class="empty"><div class="empty-icon" style="font-size:28px">🔍</div><div class="empty-title">No matches</div></div>';
+    return;
+  }
+  wrap.innerHTML =
+    '<div class="track-table-head">' +
+      '<div class="col-sort '+(S.plSort==="index"?"active":"")+'" onclick="setPlSort('index')">#</div><div></div>' +
+      '<div class="col-sort '+(S.plSort==="title"?"active":"")+'" onclick="setPlSort('title')">Title</div>' +
+      '<div class="col-sort '+(S.plSort==="album"?"active":"")+'" onclick="setPlSort('album')">Album</div>' +
+      '<div class="col-sort '+(S.plSort==="bpm"?"active":"")+'" onclick="setPlSort('bpm')" style="text-align:center">BPM</div>' +
+      '<div class="col-sort '+(S.plSort==="duration"?"active":"")+'" onclick="setPlSort('duration')" style="text-align:right">Time</div>' +
+      '<div></div>' +
+    '</div>' +
+    '<div id="track-rows">' + tracks.map((t,i)=>renderRow(t,i,t._origIdx)).join('') + '</div>';
+
+  // Wire up drag handles
+  document.querySelectorAll('.track-row[draggable]').forEach(row => {
+    row.addEventListener('dragstart', e => {
+      dragSrcIdx = parseInt(row.dataset.origIdx);
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    row.addEventListener('dragover', e => { e.preventDefault(); row.classList.add('drag-over'); });
+    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+    row.addEventListener('drop', e => {
+      e.preventDefault();
+      row.classList.remove('drag-over');
+      const destIdx = parseInt(row.dataset.origIdx);
+      if (dragSrcIdx === null || dragSrcIdx === destIdx) return;
+      const tracks = S.currentPL.tracks;
+      const [moved] = tracks.splice(dragSrcIdx, 1);
+      tracks.splice(destIdx, 0, moved);
+      if (S.trackIdx === dragSrcIdx) S.trackIdx = destIdx;
+      else if (S.trackIdx > dragSrcIdx && S.trackIdx <= destIdx) S.trackIdx--;
+      else if (S.trackIdx < dragSrcIdx && S.trackIdx >= destIdx) S.trackIdx++;
+      dragSrcIdx = null;
+      savePL(S.currentPL);
+      renderTrackList();
+    });
+  });
 }
 
-function renderRow(t, i) {
+function renderRow(t, displayIdx, origIdx) {
+  const i = origIdx !== undefined ? origIdx : displayIdx;
   const playing = S.trackIdx===i;
   const cues = S.cuePoints[t.id]||{};
   const hasBingo = !!cues.bingo;
   const hasTriviaS = !!cues.triviaS;
   const hasTriviaE = !!cues.triviaE;
-  const dots = `<div class="cue-dots">
-    <div class="cue-dot ${hasBingo?'bingo':''}" title="Bingo cue"></div>
-    <div class="cue-dot ${hasTriviaS?'trivia-s':''}" title="Trivia start"></div>
-    <div class="cue-dot ${hasTriviaE?'trivia-e':''}" title="Trivia end"></div>
-  </div>`;
+  const dots = '<div class="cue-dots">' +
+    '<div class="cue-dot '+(hasBingo?'bingo':'')+'" title="Bingo cue"></div>' +
+    '<div class="cue-dot '+(hasTriviaS?'trivia-s':'')+'" title="Trivia start"></div>' +
+    '<div class="cue-dot '+(hasTriviaE?'trivia-e':'')+'" title="Trivia end"></div>' +
+  '</div>';
 
-  return `<div class="track-row${playing?' playing':''}" id="tr-${i}" ondblclick="playAt(${i})">
-    <div class="t-num">${i+1}</div>
-    <div class="t-wave"><div class="waveform">${'<div class="wb"></div>'.repeat(5)}</div></div>
-    <div class="t-art">${t.artUrl?`<img src="${t.artUrl}" loading="lazy">`:'<div class="t-art-ph">♪</div>'}</div>
-    <div class="t-info">
-      <div class="t-title">${esc(t.title||t.filename||'Unknown')}</div>
-      <div class="t-artist">${esc(t.artist||'Unknown Artist')}</div>
-      ${(hasBingo||hasTriviaS||hasTriviaE)?dots:''}
-    </div>
-    <div class="t-album">${esc(t.album||'—')}</div>
-    <div class="t-bpm">${t.bpm?Math.round(t.bpm):'—'}</div>
-    <div class="t-dur">${fmt(t.duration||0)}</div>
-    <div class="t-actions">
-      ${S.isAdmin?`<button class="t-btn" onclick="openCueEditor('${t.id}',${i})" title="Edit cue points">🎯</button>`:''}
-      ${S.isAdmin?`<button class="t-btn" onclick="toggleBingo('${t.id}',${i})" title="Toggle bingo flag">🎱</button>`:''}
-      <button class="t-btn" onclick="removeTrack(${i})" title="Remove">✕</button>
-    </div>
-  </div>`;
+  return '<div class="track-row'+(playing?' playing':'')+'" id="tr-'+i+'" ' +
+    'draggable="true" data-orig-idx="'+i+'" ondblclick="playAt('+i+')">' +
+    '<div class="t-num" style="cursor:grab;opacity:0.4;font-size:16px;">⠿</div>' +
+    '<div class="t-wave"><div class="waveform">'+'<div class="wb"></div>'.repeat(5)+'</div></div>' +
+    '<div class="t-art">'+(t.artUrl?'<img src="'+t.artUrl+'" loading="lazy">':'<div class="t-art-ph">♪</div>')+'</div>' +
+    '<div class="t-info">' +
+      '<div class="t-title">'+esc(t.title||t.filename||'Unknown')+'</div>' +
+      '<div class="t-artist">'+esc(t.artist||'Unknown Artist')+'</div>' +
+      ((hasBingo||hasTriviaS||hasTriviaE)?dots:'') +
+    '</div>' +
+    '<div class="t-album">'+esc(t.album||'—')+'</div>' +
+    '<div class="t-bpm">'+(t.bpm?Math.round(t.bpm):'—')+'</div>' +
+    '<div class="t-dur">'+fmt(t.duration||0)+'</div>' +
+    '<div class="t-actions">' +
+      (S.isAdmin?'<button class="t-btn" onclick="openCueEditor(''+t.id+'','+i+')" title="Edit cue points">🎯</button>':'') +
+      (S.isAdmin?'<button class="t-btn" onclick="toggleBingo(''+t.id+'','+i+')" title="Toggle bingo flag">🎱</button>':'') +
+      '<button class="t-btn" onclick="removeTrack('+i+')" title="Remove">✕</button>' +
+    '</div>' +
+  '</div>';
 }
 
 async function createPlaylist() {
@@ -1770,6 +1915,8 @@ function removeTrack(i) {
   else if (S.trackIdx>i) S.trackIdx--;
   savePL(S.currentPL);
   renderTrackList();
+  const cnt = S.currentPL.tracks.length;
+  document.getElementById('pl-meta').textContent = S.currentPL.name + ' · ' + cnt + ' tracks';
 }
 
 function toggleBingo(id, i) {
@@ -1905,23 +2052,70 @@ async function fetchArt(artist, title, album) {
   return null;
 }
 
+function getFilteredLibrary() {
+  let tracks = [...S.library];
+  const q = S.libSearch.toLowerCase().trim();
+  if (q) tracks = tracks.filter(t =>
+    (t.title||'').toLowerCase().includes(q) ||
+    (t.artist||'').toLowerCase().includes(q) ||
+    (t.album||'').toLowerCase().includes(q)
+  );
+  tracks.sort((a,b) => {
+    let av, bv;
+    if (S.libSort==='title') { av=(a.title||'').toLowerCase(); bv=(b.title||'').toLowerCase(); }
+    else if (S.libSort==='artist') { av=(a.artist||'').toLowerCase(); bv=(b.artist||'').toLowerCase(); }
+    else if (S.libSort==='album') { av=(a.album||'').toLowerCase(); bv=(b.album||'').toLowerCase(); }
+    else if (S.libSort==='duration') { av=a.duration||0; bv=b.duration||0; }
+    else if (S.libSort==='bpm') { av=a.bpm||0; bv=b.bpm||0; }
+    else { return 0; }
+    if (av < bv) return -1 * S.libSortDir;
+    if (av > bv) return 1 * S.libSortDir;
+    return 0;
+  });
+  return tracks;
+}
+
+function setLibSearch(v) {
+  S.libSearch=v; renderLibrary();
+}
+
+function setLibSort(key) {
+  if (S.libSort===key) { S.libSortDir *= -1; }
+  else { S.libSort=key; S.libSortDir=1; }
+  updateLibSortBtns();
+  renderLibrary();
+}
+
+function updateLibSortBtns() {
+  ['title','artist','album','duration','bpm'].forEach(k => {
+    const el = document.getElementById('lib-sort-'+k);
+    if (!el) return;
+    const active = S.libSort===k;
+    el.classList.toggle('active', active);
+    el.innerHTML = k.charAt(0).toUpperCase()+k.slice(1) + (active ? ' <span class="sort-arrow">'+(S.libSortDir===1?'↑':'↓')+'</span>' : '');
+  });
+}
+
 function renderLibrary() {
-  const cnt=S.library.length;
-  document.getElementById('lib-count').textContent=`${cnt} track${cnt!==1?'s':''} in library`;
+  const all = S.library.length;
+  const tracks = getFilteredLibrary();
+  document.getElementById('lib-count').textContent = all + ' track' + (all!==1?'s':'') + ' in library' + (tracks.length!==all ? ' · ' + tracks.length + ' shown' : '');
   const el=document.getElementById('lib-list');
-  if(!cnt){el.innerHTML='';return;}
-  el.innerHTML=`
-    <div class="track-table-head"><div>#</div><div></div><div>Title</div><div>Album</div><div>BPM</div><div style="text-align:right">Time</div><div></div></div>
-    <div>${S.library.map((t,i)=>`
-      <div class="track-row" ondblclick="addToCurrentPL('${t.id}')">
-        <div class="t-num">${i+1}</div><div></div>
-        <div class="t-art">${t.artUrl?`<img src="${t.artUrl}" loading="lazy">`:'<div class="t-art-ph">♪</div>'}</div>
-        <div class="t-info"><div class="t-title">${esc(t.title)}</div><div class="t-artist">${esc(t.artist)}</div></div>
-        <div class="t-album">${esc(t.album||'—')}</div>
-        <div class="t-bpm">${t.bpm?Math.round(t.bpm):'—'}</div>
-        <div class="t-dur">${fmt(t.duration||0)}</div>
-        <div class="t-actions" style="opacity:1;"><button class="t-btn" style="opacity:1;" onclick="addToCurrentPL('${t.id}')" title="Add to current playlist">＋</button></div>
-      </div>`).join('')}</div>`;
+  if(!all){el.innerHTML='';return;}
+  if(!tracks.length){el.innerHTML='<div class="empty"><div class="empty-icon" style="font-size:28px;">🔍</div><div class="empty-title">No matches</div><div class="empty-desc">Try a different search term.</div></div>';return;}
+  el.innerHTML=
+    '<div class="track-table-head"><div>#</div><div></div><div class="col-sort '+(S.libSort==="title"?"active":"")+'" onclick="setLibSort('title')">Title</div><div class="col-sort '+(S.libSort==="album"?"active":"")+'" onclick="setLibSort('album')">Album</div><div class="col-sort '+(S.libSort==="bpm"?"active":"")+'" onclick="setLibSort('bpm')" style="text-align:center">BPM</div><div class="col-sort '+(S.libSort==="duration"?"active":"")+'" onclick="setLibSort('duration')" style="text-align:right">Time</div><div></div></div>' +
+    '<div>' + tracks.map((t,i)=>
+      '<div class="track-row" ondblclick="addToCurrentPL(''+t.id+'')">' +
+        '<div class="t-num">'+(i+1)+'</div><div></div>' +
+        '<div class="t-art">'+(t.artUrl?'<img src="'+t.artUrl+'" loading="lazy">':'<div class="t-art-ph">♪</div>')+'</div>' +
+        '<div class="t-info"><div class="t-title">'+esc(t.title)+'</div><div class="t-artist">'+esc(t.artist)+'</div></div>' +
+        '<div class="t-album">'+esc(t.album||'—')+'</div>' +
+        '<div class="t-bpm">'+(t.bpm?Math.round(t.bpm):'—')+'</div>' +
+        '<div class="t-dur">'+fmt(t.duration||0)+'</div>' +
+        '<div class="t-actions" style="opacity:1;"><button class="t-btn" style="opacity:1;" onclick="addToCurrentPL(''+t.id+'')" title="Add to current playlist">＋</button></div>' +
+      '</div>'
+    ).join('') + '</div>';
 }
 
 function addToCurrentPL(id) {
@@ -2182,40 +2376,92 @@ function highlightRow() {
 let jbOpen=false, jbDrag=false, jbOX, jbOY;
 const jbEl=document.getElementById('jukebox');
 
+let jukeboxWin = null;
 function toggleJukebox() {
-  jbOpen=!jbOpen;
-  jbEl.classList.toggle('open',jbOpen);
+  // If window already open, focus it
+  if (jukeboxWin && !jukeboxWin.closed) { jukeboxWin.focus(); return; }
+  const w = 480, h = 580;
+  const left = window.screenX + window.outerWidth + 10;
+  const top = window.screenY;
+  jukeboxWin = window.open('', 'belladonna_jukebox',
+    'width=' + w + ',height=' + h + ',left=' + left + ',top=' + top +
+    ',resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no');
+  if (!jukeboxWin) { toast('Allow popups for this page to use Jukebox display'); return; }
+  buildJukeboxWindow();
+}
+
+function buildJukeboxWindow() {
+  if (!jukeboxWin || jukeboxWin.closed) return;
+  const t = S.track;
+  const title = t ? (t.title||t.filename||'Nothing playing') : 'Nothing playing';
+  const artist = t ? (t.artist||'') : 'Belladonna Audio';
+  const art = t ? t.artUrl : null;
+  jukeboxWin.document.open();
+  jukeboxWin.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Belladonna — Now Playing</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=Cinzel:wght@400;600&family=Crimson+Pro:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{background:#000;color:#fff;font-family:'Crimson Pro',serif;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;user-select:none;}
+    #jw-bg{position:fixed;inset:0;transition:background 2s ease;z-index:0;}
+    .jw-brand{position:fixed;top:18px;left:0;right:0;text-align:center;font-family:'Cinzel Decorative',serif;font-size:10px;letter-spacing:0.25em;color:rgba(255,255,255,0.2);z-index:2;}
+    .jw-art{width:210px;height:210px;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.9),0 0 40px rgba(168,85,247,0.2);margin-bottom:26px;background:#111;z-index:2;flex-shrink:0;}
+    .jw-art img{width:100%;height:100%;object-fit:cover;}
+    .jw-art-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:64px;opacity:0.15;}
+    .jw-title{font-family:'Cinzel',serif;font-size:22px;text-align:center;z-index:2;padding:0 28px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 2px 20px rgba(0,0,0,0.9);}
+    .jw-artist{font-size:15px;color:rgba(255,255,255,0.55);text-align:center;z-index:2;margin-top:6px;font-style:italic;}
+    .jw-next{position:fixed;bottom:24px;left:0;right:0;text-align:center;z-index:2;}
+    .jw-next-label{font-family:'Cinzel',serif;font-size:8px;letter-spacing:0.3em;text-transform:uppercase;color:rgba(255,255,255,0.25);margin-bottom:4px;}
+    .jw-next-val{font-size:13px;color:rgba(255,255,255,0.4);font-style:italic;}
+    body>*{position:relative;z-index:1;}
+  </style></head><body>
+  <div id="jw-bg"></div>
+  <div class="jw-brand">Belladonna Audio Alchemies</div>
+  <div class="jw-art" id="jw-art">${art ? '<img src="'+art+'">' : '<div class="jw-art-ph">💀</div>'}</div>
+  <div class="jw-title" id="jw-title">${title}</div>
+  <div class="jw-artist" id="jw-artist">${artist}</div>
+  <div class="jw-next" id="jw-next" style="display:none">
+    <div class="jw-next-label">Up Next</div>
+    <div class="jw-next-val" id="jw-next-val"></div>
+  </div>
+  </body></html>`);
+  jukeboxWin.document.close();
+}
+
+function updateJukeboxWindow(t, nextTrack) {
+  if (!jukeboxWin || jukeboxWin.closed) return;
+  try {
+    const d = jukeboxWin.document;
+    d.getElementById('jw-title').textContent = t.title||t.filename||'';
+    d.getElementById('jw-artist').textContent = t.artist||'';
+    const artEl = d.getElementById('jw-art');
+    artEl.innerHTML = t.artUrl ? '<img src="'+t.artUrl+'">' : '<div class="jw-art-ph">💀</div>';
+    if (t.artUrl) {
+      const img = new Image(); img.crossOrigin='anonymous';
+      img.onload = () => {
+        try {
+          const c=document.createElement('canvas');c.width=c.height=1;
+          const ctx=c.getContext('2d');ctx.drawImage(img,0,0,1,1);
+          const [r,g,b]=ctx.getImageData(0,0,1,1).data;
+          const bg = d.getElementById('jw-bg');
+          if (bg) bg.style.background='radial-gradient(ellipse at center,rgba('+r+','+g+','+b+',0.4) 0%,#000 70%)';
+        } catch(e){}
+      };
+      img.src=t.artUrl;
+    }
+    const nextEl=d.getElementById('jw-next');
+    if (nextTrack) {
+      nextEl.style.display='block';
+      d.getElementById('jw-next-val').textContent=nextTrack.title+' — '+nextTrack.artist;
+    } else { nextEl.style.display='none'; }
+  } catch(e){}
 }
 
 function updateJukebox(t) {
-  document.getElementById('jb-title').textContent=t.title||t.filename;
-  document.getElementById('jb-artist').textContent=t.artist||'';
-  document.getElementById('jb-art').innerHTML=t.artUrl?`<img src="${t.artUrl}">`:'<div class="jb-art-ph">💀</div>';
-  if(t.artUrl){
-    const img=new Image(); img.crossOrigin='anonymous';
-    img.onload=()=>{
-      try{
-        const c=document.createElement('canvas'); c.width=c.height=1;
-        const ctx=c.getContext('2d'); ctx.drawImage(img,0,0,1,1);
-        const [r,g,b]=ctx.getImageData(0,0,1,1).data;
-        document.getElementById('jb-bg').style.background=`radial-gradient(ellipse at center,rgba(${r},${g},${b},0.35) 0%,#000 70%)`;
-      }catch(e){}
-    };
-    img.src=t.artUrl;
-  }
   const pl=S.currentPL;
-  if(pl?.tracks){
-    const ni=S.trackIdx+1;
-    const next=pl.tracks[ni];
-    const jbn=document.getElementById('jb-next');
-    if(next){jbn.style.display='block';document.getElementById('jb-next-val').textContent=`${next.title} — ${next.artist}`;}
-    else{jbn.style.display='none';}
-  }
+  const next = pl?.tracks?.[S.trackIdx+1] || null;
+  updateJukeboxWindow(t, next);
 }
-
-jbEl.addEventListener('mousedown',e=>{if(e.target.closest('.jb-close'))return;jbDrag=true;const r=jbEl.getBoundingClientRect();jbOX=e.clientX-r.left;jbOY=e.clientY-r.top;});
-document.addEventListener('mousemove',e=>{if(!jbDrag)return;jbEl.style.left=(e.clientX-jbOX)+'px';jbEl.style.top=(e.clientY-jbOY)+'px';jbEl.style.right='auto';});
-document.addEventListener('mouseup',()=>jbDrag=false);
 
 // ═══════════════ CUE POINTS ═══════════════
 let editId=null, editDur=0;
@@ -2352,7 +2598,7 @@ async function loadAdminData() {
 
 function renderActiveSessions(sessions) {
   const el=document.getElementById('adm-active');
-  if(!sessions.length){el.innerHTML='<div style="color:var(--text-muted);font-size:13px;font-style:italic;">No other active sessions</div>';return;}
+  if(!sessions.length){el.innerHTML='<div style="color:var(--text-muted);font-size:13px;font-style:italic;">☽ No souls currently logged in</div>';return;}
   el.innerHTML=sessions.map(s=>`
     <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
       <span class="dot-on"></span>
@@ -2391,8 +2637,12 @@ function renderUsers(users, activeSessions) {
     </tr>`).join('');
 }
 
-// Local user store — used when Firebase is not configured
-const localUsers = {};
+// Local user store — persists to localStorage when Firebase not configured
+const localUsers = JSON.parse(localStorage.getItem('bella_users') || '{}');
+
+function saveLocalUsers() {
+  try { localStorage.setItem('bella_users', JSON.stringify(localUsers)); } catch(e){}
+}
 
 async function createUser() {
   const name=document.getElementById('nu-name').value.trim();
@@ -2414,9 +2664,10 @@ async function createUser() {
       toast('Firebase error — saved locally only');
     }
   }
-  // No Firebase — save locally for this session
+  // No Firebase — save to localStorage
   localUsers[username]=userData;
-  toast('Host "' + name + '" created (local session only — connect Firebase to persist)');
+  saveLocalUsers();
+  toast('Host "' + name + '" created (saved locally — connect Firebase to sync across devices)');
   closeModal('modal-new-user');
   renderLocalUsers();
 }
@@ -2437,6 +2688,7 @@ function renderLocalUsers() {
 
 function deleteLocalUser(id) {
   delete localUsers[id];
+  saveLocalUsers();
   toast('User removed');
   renderLocalUsers();
 }

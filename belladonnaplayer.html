@@ -1535,10 +1535,10 @@ const S = {
   trackIdx: -1,
   isPlaying: false,
   shuffle: false,
-  fadeMode: 'crossfade',
+  fadeMode: 'crossfade', // crossfade | clean | off
   freePlay: false,
   volume: 0.8,
-  cuePoints: {},
+  cuePoints: {}, // trackId -> {bingo, triviaS, triviaE}
   settings: { crossfade: 8, timer: 0, bpmMatch: true, cleanSkip: true },
   sessionId: null,
   sessionStart: null,
@@ -1827,11 +1827,11 @@ function renderTrackList() {
   }
   wrap.innerHTML =
     '<div class="track-table-head">' +
-      '<div class="col-sort '+(S.plSort==="index"?"active":"")+'" onclick="setPlSort('index')">#</div><div></div>' +
-      '<div class="col-sort '+(S.plSort==="title"?"active":"")+'" onclick="setPlSort('title')">Title</div>' +
-      '<div class="col-sort '+(S.plSort==="album"?"active":"")+'" onclick="setPlSort('album')">Album</div>' +
-      '<div class="col-sort '+(S.plSort==="bpm"?"active":"")+'" onclick="setPlSort('bpm')" style="text-align:center">BPM</div>' +
-      '<div class="col-sort '+(S.plSort==="duration"?"active":"")+'" onclick="setPlSort('duration')" style="text-align:right">Time</div>' +
+      '<div class="col-sort '+(S.plSort==="index"?"active":"")+'" onclick="setPlSort(\'index\')">#</div><div></div>' +
+      '<div class="col-sort '+(S.plSort==="title"?"active":"")+'" onclick="setPlSort(\'title\')">Title</div>' +
+      '<div class="col-sort '+(S.plSort==="album"?"active":"")+'" onclick="setPlSort(\'album\')">Album</div>' +
+      '<div class="col-sort '+(S.plSort==="bpm"?"active":"")+'" onclick="setPlSort(\'bpm\')" style="text-align:center">BPM</div>' +
+      '<div class="col-sort '+(S.plSort==="duration"?"active":"")+'" onclick="setPlSort(\'duration\')" style="text-align:right">Time</div>' +
       '<div></div>' +
     '</div>' +
     '<div id="track-rows">' + tracks.map((t,i)=>renderRow(t,i,t._origIdx)).join('') + '</div>';
@@ -1891,8 +1891,8 @@ function renderRow(t, displayIdx, origIdx) {
     '<div class="t-bpm">'+(t.bpm?Math.round(t.bpm):'—')+'</div>' +
     '<div class="t-dur">'+fmt(t.duration||0)+'</div>' +
     '<div class="t-actions">' +
-      (S.isAdmin?'<button class="t-btn" onclick="openCueEditor(''+t.id+'','+i+')" title="Edit cue points">🎯</button>':'') +
-      (S.isAdmin?'<button class="t-btn" onclick="toggleBingo(''+t.id+'','+i+')" title="Toggle bingo flag">🎱</button>':'') +
+      (S.isAdmin?'<button class="t-btn" onclick="openCueEditor(\''+t.id+'\','+i+')" title="Edit cue points">🎯</button>':'') +
+      (S.isAdmin?'<button class="t-btn" onclick="toggleBingo(\''+t.id+'\','+i+')" title="Toggle bingo flag">🎱</button>':'') +
       '<button class="t-btn" onclick="removeTrack('+i+')" title="Remove">✕</button>' +
     '</div>' +
   '</div>';
@@ -2122,16 +2122,16 @@ function renderLibrary() {
   if(!all){el.innerHTML='';return;}
   if(!tracks.length){el.innerHTML='<div class="empty"><div class="empty-icon" style="font-size:28px;">🔍</div><div class="empty-title">No matches</div><div class="empty-desc">Try a different search term.</div></div>';return;}
   el.innerHTML=
-    '<div class="track-table-head"><div>#</div><div></div><div class="col-sort '+(S.libSort==="title"?"active":"")+'" onclick="setLibSort('title')">Title</div><div class="col-sort '+(S.libSort==="album"?"active":"")+'" onclick="setLibSort('album')">Album</div><div class="col-sort '+(S.libSort==="bpm"?"active":"")+'" onclick="setLibSort('bpm')" style="text-align:center">BPM</div><div class="col-sort '+(S.libSort==="duration"?"active":"")+'" onclick="setLibSort('duration')" style="text-align:right">Time</div><div></div></div>' +
+    '<div class="track-table-head"><div>#</div><div></div><div class="col-sort '+(S.libSort==="title"?"active":"")+'" onclick="setLibSort(\'title\')">Title</div><div class="col-sort '+(S.libSort==="album"?"active":"")+'" onclick="setLibSort(\'album\')">Album</div><div class="col-sort '+(S.libSort==="bpm"?"active":"")+'" onclick="setLibSort(\'bpm\')" style="text-align:center">BPM</div><div class="col-sort '+(S.libSort==="duration"?"active":"")+'" onclick="setLibSort(\'duration\')" style="text-align:right">Time</div><div></div></div>' +
     '<div>' + tracks.map((t,i)=>
-      '<div class="track-row" ondblclick="addToCurrentPL(''+t.id+'')">' +
+      '<div class="track-row" ondblclick="addToCurrentPL(\''+t.id+'\')">' +
         '<div class="t-num">'+(i+1)+'</div><div></div>' +
         '<div class="t-art">'+(t.artUrl?'<img src="'+t.artUrl+'" loading="lazy">':'<div class="t-art-ph">♪</div>')+'</div>' +
         '<div class="t-info"><div class="t-title">'+esc(t.title)+'</div><div class="t-artist">'+esc(t.artist)+'</div></div>' +
         '<div class="t-album">'+esc(t.album||'—')+'</div>' +
         '<div class="t-bpm">'+(t.bpm?Math.round(t.bpm):'—')+'</div>' +
         '<div class="t-dur">'+fmt(t.duration||0)+'</div>' +
-        '<div class="t-actions" style="opacity:1;"><button class="t-btn" style="opacity:1;" onclick="addToCurrentPL(''+t.id+'')" title="Add to current playlist">＋</button></div>' +
+        '<div class="t-actions" style="opacity:1;"><button class="t-btn" style="opacity:1;" onclick="addToCurrentPL(\''+t.id+'\')" title="Add to current playlist">＋</button></div>' +
       '</div>'
     ).join('') + '</div>';
 }
@@ -2774,9 +2774,7 @@ async function loadBingoCategories() {
     const sel = document.getElementById('bingo-cat-select');
     sel.innerHTML = '<option value="">— select bingo category —</option>' +
       S.bingoCategories.map(c => `<option value="${c.id}">${esc(c.title)}</option>`).join('');
-    if (S.bingoCategoryId) {
-      sel.value = S.bingoCategoryId;
-    }
+    if (S.bingoCategoryId) sel.value = S.bingoCategoryId;
   } catch(e) {
     console.error('Bingo bridge: failed to load categories', e);
   }
@@ -2829,27 +2827,21 @@ function pingBingoApp(track) {
   }).catch(e => console.warn('Bingo bridge: write failed', e));
 }
 
-// ── Auto-link when opened from the bingo app via ?bingo=categoryId ────────────
 function checkBingoLaunchParam() {
   const params = new URLSearchParams(window.location.search);
   const catId  = params.get('bingo');
   if (!catId) return;
   S.bingoCategoryId = catId;
-  // Categories may not be loaded yet — activate the link and let
-  // loadBingoCategories() set the dropdown value once it resolves.
   S.bingoLinked = true;
   initBingoDb();
   updateBingoLinkUI();
   toast('🎱 Bingo auto-linked from app!', 3500);
 }
 
-// Patch enterApp to run bridge setup after login
 const _origEnterApp = enterApp;
 function enterApp() {
   _origEnterApp();
   loadBingoCategories().then(() => {
-    // If we arrived via ?bingo= the categoryId is already set;
-    // update the dropdown now that options are populated.
     if (S.bingoCategoryId) {
       const sel = document.getElementById('bingo-cat-select');
       sel.value = S.bingoCategoryId;
@@ -2859,7 +2851,6 @@ function enterApp() {
   checkBingoLaunchParam();
 }
 
-// Patch playAt to fire the bingo ping on bingo-type tracks
 const _origPlayAt = playAt;
 async function playAt(idx) {
   await _origPlayAt(idx);

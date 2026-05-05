@@ -2043,23 +2043,25 @@ async function loadPlaylists() {
       const snap = await db.ref('player/playlists').once('value');
       const data = snap.val() || {};
       const fromDb = Object.entries(data).map(([id,p])=>({id,...p}));
-      // Re-merge artUrls from localStorage — they're stripped before saving to Firebase
-      let artCache = {};
-      try {
-        const local = localStorage.getItem('bella_playlists');
-        if (local) {
-          const localPls = JSON.parse(local);
-          localPls.forEach(p => {
-            (p.tracks||[]).forEach(t => { if (t.artUrl) artCache[t.id] = t.artUrl; });
-          });
-        }
-      } catch(e){}
-      fromDb.forEach(p => {
-        (p.tracks||[]).forEach(t => { if (artCache[t.id]) t.artUrl = artCache[t.id]; });
-      });
-      S.playlists = fromDb;
-      renderSidePlaylists();
-      return;
+      if (fromDb.length) {
+        // Re-merge artUrls from localStorage — stripped before saving to Firebase
+        let artCache = {};
+        try {
+          const local = localStorage.getItem('bella_playlists');
+          if (local) {
+            JSON.parse(local).forEach(p => {
+              (p.tracks||[]).forEach(t => { if (t.artUrl) artCache[t.id] = t.artUrl; });
+            });
+          }
+        } catch(e){}
+        fromDb.forEach(p => {
+          (p.tracks||[]).forEach(t => { if (artCache[t.id]) t.artUrl = artCache[t.id]; });
+        });
+        S.playlists = fromDb;
+        renderSidePlaylists();
+        return;
+      }
+      // Firebase connected but empty — fall through to localStorage
     } catch(e){ console.warn('loadPlaylists Firebase error:', e.message); }
   }
   // Fallback: localStorage
@@ -2073,8 +2075,9 @@ async function loadPlaylists() {
 function renderSidePlaylists() {
   const el = document.getElementById('s-playlists');
   if (!S.playlists.length) { el.innerHTML='<div style="color:var(--text-ghost);font-size:12px;padding:6px 12px;font-style:italic;">No playlists yet</div>'; return; }
+  const activePLId = S.currentPL?.id === '__library__' ? null : S.currentPL?.id;
   el.innerHTML = S.playlists.map(p=>`
-    <div class="pl-item ${S.currentPL?.id===p.id?'active':''}" onclick="selectPL('${p.id}')">
+    <div class="pl-item ${activePLId===p.id?'active':''}" onclick="selectPL('${p.id}')">
       <span>${p.type==='bingo'?'🎱':'♪'}</span>
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;">${esc(p.name)}</span>
       <span class="pl-badge ${p.type}">${p.type==='bingo'?'BINGO':'GEN'}</span>
@@ -2277,7 +2280,7 @@ function renderRow(t, displayIdx, origIdx) {
     '<div class="t-actions">' +
       (S.isAdmin?'<button class="t-btn" onclick="openCueEditor(\''+t.id+'\','+i+')" title="Edit cue points">🎯</button>':'') +
       (S.isAdmin?'<button class="t-btn" onclick="toggleBingo(\''+t.id+'\','+i+')" title="Toggle bingo flag">🎱</button>':'') +
-      '<button class="t-btn" onclick="removeTrack('+i+')" title="Remove">✕</button>' +
+      '<button class="t-btn" onclick="removeTrack('+i+')" title="Remove from playlist" style="opacity:1;color:var(--text3);">✕</button>' +
     '</div>' +
   '</div>';
 }
@@ -2323,6 +2326,7 @@ async function savePL(pl) {
 
 function removeTrack(i) {
   if (!S.currentPL?.tracks) return;
+  if (S.currentPL.id === '__library__') { toast('Switch to a real playlist to remove tracks'); return; }
   S.currentPL.tracks.splice(i,1);
   if (S.trackIdx===i) { S.trackIdx=-1; S.track=null; }
   else if (S.trackIdx>i) S.trackIdx--;
@@ -2620,14 +2624,18 @@ function renderLibrary() {
     '<div class="col-sort '+(S.libSort==="duration"?"active":"")+'" onclick="setLibSort(\'duration\')" style="text-align:right">Time<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
     '<div></div></div>' +
     '<div>' + tracks.map((t,i)=>
-      '<div class="track-row" ondblclick="addToCurrentPL(\''+t.id+'\')">' +
+      '<div class="track-row" ondblclick="playFromLibrary(\''+t.id+'\')">' +
         '<div class="t-num">'+(i+1)+'</div><div></div>' +
         '<div class="t-art">'+(t.artUrl?'<img src="'+t.artUrl+'" loading="lazy">':'<div class="t-art-ph">♪</div>')+'</div>' +
         '<div class="t-info"><div class="t-title">'+esc(t.title)+'</div><div class="t-artist">'+esc(t.artist)+'</div></div>' +
         '<div class="t-album">'+esc(t.album||'—')+'</div>' +
         '<div class="t-bpm">'+(t.bpm?Math.round(t.bpm):'—')+'</div>' +
         '<div class="t-dur">'+fmt(t.duration||0)+'</div>' +
-        '<div class="t-actions" style="opacity:1;"><button class="t-btn" style="opacity:1;" onclick="addToCurrentPL(\''+t.id+'\')" title="Add to current playlist">＋</button></div>' +
+        '<div class="t-actions" style="opacity:1;">' +
+          '<button class="t-btn" style="opacity:1;" onclick="playFromLibrary(\''+t.id+'\')" title="Play now">▶</button>' +
+          '<button class="t-btn" style="opacity:1;" onclick="addToCurrentPL(\''+t.id+'\')" title="Add to playlist">＋</button>' +
+          '<button class="t-btn" style="opacity:1;color:var(--text3);" onclick="deleteFromLibrary(\''+t.id+'\')" title="Remove from library">✕</button>' +
+        '</div>' +
       '</div>'
     ).join('') + '</div>';
   applyColWidths();
@@ -2635,7 +2643,7 @@ function renderLibrary() {
 }
 
 function addToCurrentPL(id) {
-  if(!S.currentPL){toast('Select a playlist first');return;}
+  if(!S.currentPL || S.currentPL.id === '__library__'){toast('Select a playlist first');return;}
   const t=S.library.find(t=>t.id===id);
   if(!t) return;
   if(!S.currentPL.tracks) S.currentPL.tracks=[];
@@ -2643,6 +2651,56 @@ function addToCurrentPL(id) {
   savePL(S.currentPL);
   renderTrackList();
   toast(`Added "${t.title}" to ${S.currentPL.name}`);
+}
+
+function deleteFromLibrary(id) {
+  S.library = S.library.filter(t => t.id !== id);
+  delete S.fileHandles[id];
+  saveLibraryMeta();
+  renderLibrary();
+  // If currently playing this track, stop
+  if (S.track?.id === id) {
+    pauseAudio();
+    S.track = null; S.trackIdx = -1;
+    document.getElementById('np-title').textContent = 'Nothing playing';
+    document.getElementById('np-artist').textContent = 'Select a track to begin';
+  }
+}
+
+// Play a single track straight from the library without needing a playlist.
+// Sets up a temporary one-track "Now" context so nextTrack/prevTrack still work.
+async function playFromLibrary(id) {
+  const t = S.library.find(x => x.id === id);
+  if (!t) return;
+  const handle = S.fileHandles[t.id];
+  if (!handle) { toast('Load the music folder first (📂)'); return; }
+
+  const file = handle._safariFile ? handle._safariFile : await handle.getFile();
+  const url = URL.createObjectURL(file);
+
+  // Build a virtual "Library" playlist from whatever is currently visible
+  // so prev/next still navigate through the library view naturally
+  const visibleTracks = getFilteredLibrary();
+  const idx = visibleTracks.findIndex(x => x.id === id);
+
+  S.currentPL = { id: '__library__', name: 'Library', type: 'general', tracks: visibleTracks };
+  S.trackIdx = idx >= 0 ? idx : 0;
+  S.track = t;
+
+  const cues = S.cuePoints[t.id] || {};
+  const startTime = cues.bingo || 0;
+
+  if (S.isPlaying && S.fadeMode === 'crossfade') {
+    await doCrossfade(url, startTime, t, 0);
+  } else if (S.isPlaying && S.fadeMode === 'clean') {
+    doCleanSwitch(url, startTime, t, 0);
+  } else {
+    directPlay(url, startTime, t, 0);
+  }
+
+  updateNowPlaying(t, false, false);
+  // Switch to Now Playing so the user can see what's playing
+  showView('player');
 }
 
 // ═══════════════ PLAYBACK ═══════════════
@@ -3247,7 +3305,7 @@ document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{
 // ═══════════════ BINGO BRIDGE ═══════════════
 // Set this to wherever your bingo app.html lives.
 // Must match the same location you set MEDIA_PLAYER_URL in app.html.
-const BINGO_APP_URL = 'app.html';
+const BINGO_APP_URL = 'https://belladonnanights.github.io/bingo/index.html';
 
 const BINGO_RTDB_CONFIG = {
   apiKey:            "AIzaSyCu6aBUE8qJCCf5FRMipqQD-tGSPE78D3Y",

@@ -1635,7 +1635,7 @@ async function doLogin() {
   S.user = user;
   S.isAdmin = user.role === 'admin';
   S.sessionStart = new Date();
-  await logSession(user, 'active');
+  logSession(user, 'active'); // fire-and-forget — don't await
   enterApp();
 }
 
@@ -1690,6 +1690,16 @@ function enterApp() {
   loadCuePoints();
   loadLibraryMeta();
   if (S.isAdmin) loadAdminData();
+
+  // Bingo bridge setup
+  loadBingoCategories().then(() => {
+    if (S.bingoCategoryId) {
+      const sel = document.getElementById('bingo-cat-select');
+      sel.value = S.bingoCategoryId;
+      updateBingoLinkUI();
+    }
+  });
+  checkBingoLaunchParam();
 }
 
 // ═══════════════ SIDEBAR ═══════════════
@@ -2179,6 +2189,11 @@ async function playAt(idx) {
 
   updateNowPlaying(t, isBingo, isTrivia);
   highlightRow();
+
+  // Bingo bridge — ping the bingo app when a bingo-type track starts
+  if (S.bingoLinked && (isBingo)) {
+    pingBingoApp(t);
+  }
 }
 
 function directPlay(url, start, t, end) {
@@ -2841,29 +2856,6 @@ function checkBingoLaunchParam() {
   initBingoDb();
   updateBingoLinkUI();
   toast('🎱 Bingo auto-linked from app!', 3500);
-}
-
-const _origEnterApp = enterApp;
-function enterApp() {
-  _origEnterApp();
-  loadBingoCategories().then(() => {
-    if (S.bingoCategoryId) {
-      const sel = document.getElementById('bingo-cat-select');
-      sel.value = S.bingoCategoryId;
-      updateBingoLinkUI();
-    }
-  });
-  checkBingoLaunchParam();
-}
-
-const _origPlayAt = playAt;
-async function playAt(idx) {
-  await _origPlayAt(idx);
-  const pl = S.currentPL;
-  const t  = pl?.tracks?.[idx];
-  if (t && S.bingoLinked && (pl.type === 'bingo' || t.bingoFlag)) {
-    pingBingoApp(t);
-  }
 }
 
 document.addEventListener('keydown', e => {

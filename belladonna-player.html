@@ -2042,10 +2042,25 @@ async function loadPlaylists() {
     try {
       const snap = await db.ref('player/playlists').once('value');
       const data = snap.val() || {};
-      S.playlists = Object.entries(data).map(([id,p])=>({id,...p}));
+      const fromDb = Object.entries(data).map(([id,p])=>({id,...p}));
+      // Re-merge artUrls from localStorage — they're stripped before saving to Firebase
+      let artCache = {};
+      try {
+        const local = localStorage.getItem('bella_playlists');
+        if (local) {
+          const localPls = JSON.parse(local);
+          localPls.forEach(p => {
+            (p.tracks||[]).forEach(t => { if (t.artUrl) artCache[t.id] = t.artUrl; });
+          });
+        }
+      } catch(e){}
+      fromDb.forEach(p => {
+        (p.tracks||[]).forEach(t => { if (artCache[t.id]) t.artUrl = artCache[t.id]; });
+      });
+      S.playlists = fromDb;
       renderSidePlaylists();
       return;
-    } catch(e){}
+    } catch(e){ console.warn('loadPlaylists Firebase error:', e.message); }
   }
   // Fallback: localStorage
   try {
@@ -2274,7 +2289,12 @@ async function createPlaylist() {
   if (!name) return;
   const pl = { name, type, timer, tracks:[], owner:S.user.username, shuffle:false, created:new Date().toISOString() };
   if (db) {
-    try { const r = db.ref('player/playlists').push(); await r.set(pl); pl.id = r.key; } catch(e){}
+    try {
+      const forDb = { ...pl, tracks: [] }; // new playlist has no tracks yet anyway
+      const r = db.ref('player/playlists').push();
+      await r.set(forDb);
+      pl.id = r.key;
+    } catch(e){ console.warn('createPlaylist Firebase error:', e.message); }
   } else { pl.id='loc_'+Date.now(); }
   S.playlists.push(pl);
   try { localStorage.setItem('bella_playlists', JSON.stringify(S.playlists)); } catch(e){}
@@ -2287,9 +2307,15 @@ async function createPlaylist() {
 async function savePL(pl) {
   if (!pl?.id) return;
   if (db) {
-    try { await db.ref('player/playlists/' + pl.id).set(pl); } catch(e){}
+    try {
+      // Strip artUrl before saving — it can be large and isn't needed in the DB
+      const forDb = { ...pl, tracks: (pl.tracks||[]).map(t => {
+        const { artUrl, ...rest } = t; return rest;
+      })};
+      await db.ref('player/playlists/' + pl.id).set(forDb);
+    } catch(e){ console.warn('savePL Firebase error:', e.message); }
   }
-  // Always also save to localStorage as backup
+  // Always save full version (with artUrl) to localStorage as local backup
   try {
     localStorage.setItem('bella_playlists', JSON.stringify(S.playlists));
   } catch(e){}
@@ -2315,10 +2341,119 @@ function toggleBingo(id, i) {
   toast(t.bingoFlag?'🎱 Bingo flag on':'Bingo flag removed');
 }
 
-// ═══════════════ LIBRARY ═══════════════
+// ── Directory handle persistence (IndexedDB) ──────────────────────────────────
+// Browsers won't let us permanently access local files, but we can store the
+// directory handle in IndexedDB and ask for permission again on next load —
+// which is just one click instead of hunting for the folder again.
+
+function openHandleDb() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open('bella_player', 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+
+async function saveDirectoryHandle(handle) {
+  try {
+    const idb = await openHandleDb();
+    const tx = idb.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(handle, 'musicFolder');
+    await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+  } catch(e) { console.warn('Could not save directory handle:', e); }
+}
+
+async function loadDirectoryHandle() {
+  try {
+    const idb = await openHandleDb();
+    return await new Promise((res, rej) => {
+      const tx = idb.transaction('handles', 'readonly');
+      const req = tx.objectStore('handles').get('musicFolder');
+      req.onsuccess = () => res(req.result || null);
+      req.onerror = () => res(null);
+    });
+  } catch(e) { return null; }
+}
+
+async function tryRestoreFolder() {
+  // Only works in Chrome/Edge — Firefox/Safari don't support stored handles
+  if (!('showDirectoryPicker' in window)) return;
+  const handle = await loadDirectoryHandle();
+  if (!handle) return;
+  // Check if we already have permission, or can get it without a gesture
+  try {
+    const perm = await handle.queryPermission({ mode: 'read' });
+    if (perm === 'granted') {
+      await mountFolder(handle);
+      return;
+    }
+    // Permission lapsed — show a one-click prompt in the UI
+    showReconnectBanner(handle);
+  } catch(e) { /* handle stale/invalid, ignore */ }
+}
+
+function showReconnectBanner(handle) {
+  const lib = document.getElementById('lib-list');
+  if (!lib) return;
+  const banner = document.createElement('div');
+  banner.id = 'reconnect-banner';
+  banner.style.cssText = 'padding:16px;background:var(--surface2);border:1px solid var(--gold-border);border-radius:var(--radius-lg);margin-bottom:16px;display:flex;align-items:center;gap:14px;';
+  banner.innerHTML = `
+    <span style="font-size:22px;">📂</span>
+    <div style="flex:1;">
+      <div style="font-family:var(--font-heading);font-size:12px;letter-spacing:.06em;color:var(--text);margin-bottom:3px;">Music folder found</div>
+      <div style="font-size:12px;color:var(--text3);font-family:var(--serif);font-style:italic;">Click to reconnect — browser requires one-time permission per session.</div>
+    </div>
+    <button onclick="requestFolderPermission()" style="background:var(--gold-dim);border:1px solid var(--gold-border2);color:var(--gold2);font-family:var(--font-heading);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:8px 16px;border-radius:var(--radius);cursor:pointer;white-space:nowrap;">Reconnect</button>
+  `;
+  lib.parentNode.insertBefore(banner, lib);
+  // Store handle for the button to use
+  window._pendingFolderHandle = handle;
+}
+
+async function requestFolderPermission() {
+  const handle = window._pendingFolderHandle;
+  if (!handle) return;
+  try {
+    const perm = await handle.requestPermission({ mode: 'read' });
+    if (perm === 'granted') {
+      const banner = document.getElementById('reconnect-banner');
+      if (banner) banner.remove();
+      await mountFolder(handle);
+    }
+  } catch(e) { toast('Could not reconnect — try loading folder manually'); }
+}
+
+async function mountFolder(dirHandle) {
+  // Scan the directory and restore file handles without re-picking
+  const tracks = [];
+  const existingIds = new Set(S.library.map(t => t.id));
+  for await (const [name, handle] of dirHandle.entries()) {
+    if (handle.kind === 'file' && /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(name)) {
+      try {
+        const file = await handle.getFile();
+        const id = btoa(file.name + file.size).replace(/[^a-zA-Z0-9]/g,'').slice(0,20);
+        S.fileHandles[id] = handle;
+        // Only parse if not already in library
+        if (!existingIds.has(id)) {
+          const t = await parseTrack(file, handle);
+          tracks.push(t);
+        }
+      } catch(e) { /* skip unreadable files */ }
+    }
+  }
+  if (tracks.length) {
+    S.library = [...S.library, ...tracks];
+    saveLibraryMeta();
+  }
+  const count = Object.keys(S.fileHandles).length;
+  toast(count + ' tracks ready to play');
+  renderLibrary();
+}
+
 function saveLibraryMeta() {
   try {
-    // Save track metadata only (not file handles — those are runtime only)
     const meta = S.library.map(t => ({
       id:t.id, filename:t.filename, title:t.title, artist:t.artist,
       album:t.album, duration:t.duration, bpm:t.bpm, artUrl:t.artUrl
@@ -2332,54 +2467,41 @@ function loadLibraryMeta() {
     const saved = localStorage.getItem('bella_library');
     if (!saved) return;
     const meta = JSON.parse(saved);
-    // Restore metadata — file handles will be null until folder is reloaded
     S.library = meta;
     renderLibrary();
-    if (meta.length) toast(meta.length + ' tracks restored — reload folder to play');
+    // After rendering, try to silently restore the folder handle
+    tryRestoreFolder();
   } catch(e){}
 }
 
 async function loadFolder() {
   if ('showDirectoryPicker' in window) {
-    // Chrome/Edge: full directory picker with persistent handles
     try {
-      const dir = await window.showDirectoryPicker();
-      const tracks = [];
-      for await (const [name,handle] of dir.entries()) {
-        if (handle.kind==='file' && /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(name)) {
-          const file = await handle.getFile();
-          const t = await parseTrack(file, handle);
-          tracks.push(t);
-          S.fileHandles[t.id] = handle;
-        }
-      }
-      S.library=[...S.library,...tracks];
-      saveLibraryMeta();
-      renderLibrary();
-      toast('Loaded ' + tracks.length + ' tracks');
+      const dir = await window.showDirectoryPicker({ mode: 'read' });
+      await saveDirectoryHandle(dir);   // persist for next session
+      S.library = [];                   // reset — fresh load
+      S.fileHandles = {};
+      await mountFolder(dir);
     } catch(e) { if(e.name!=='AbortError') console.error(e); }
   } else {
-    // Safari/Firefox fallback: file input with webkitdirectory
+    // Safari/Firefox fallback: file input — no handle persistence possible
     const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
+    input.type = 'file'; input.multiple = true;
     input.accept = 'audio/*,.mp3,.wav,.flac,.aac,.ogg,.m4a';
     input.setAttribute('webkitdirectory', '');
     input.onchange = async function() {
       const files = Array.from(input.files).filter(f => /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(f.name));
-      if (!files.length) { toast('No audio files found in that folder'); return; }
-      toast('Loading ' + files.length + ' tracks...');
-      const tracks = [];
+      if (!files.length) { toast('No audio files found'); return; }
+      toast('Loading ' + files.length + ' tracks…');
+      S.library = []; S.fileHandles = {};
       for (const file of files) {
         const t = await parseTrack(file, null);
-        // Store file object directly for Safari
         S.fileHandles[t.id] = { _safariFile: file };
-        tracks.push(t);
+        S.library.push(t);
       }
-      S.library = [...S.library, ...tracks];
       saveLibraryMeta();
       renderLibrary();
-      toast('Loaded ' + tracks.length + ' tracks');
+      toast('Loaded ' + S.library.length + ' tracks');
     };
     input.click();
   }

@@ -14,6 +14,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400;500;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
 :root {
   --bg-void: #07050a;
@@ -1183,6 +1184,17 @@ body::after {
       <div style="padding:0 10px;">
         <button class="btn-new-pl" onclick="openModal('modal-new-pl')">+ New Playlist</button>
       </div>
+      <!-- ── Bingo Bridge ──────────────────────────────────────────────── -->
+      <div class="sidebar-divider">Bingo Link</div>
+      <div style="padding:0 12px 12px;">
+        <div id="bingo-link-status" style="font-size:11px;color:var(--text-muted);padding:4px 0 8px;font-style:italic;">Not linked</div>
+        <select class="select-input" id="bingo-cat-select" style="font-size:12px;padding:7px 10px;margin-bottom:8px;" onchange="setBingoCategory(this.value)">
+          <option value="">— select bingo category —</option>
+        </select>
+        <button class="btn-new-pl" id="bingo-link-btn" onclick="toggleBingoLink()" style="color:rgba(232,121,160,0.9);border-color:rgba(232,121,160,0.3);">
+          🎱 Activate Link
+        </button>
+      </div>
       <div class="sidebar-footer">
         <div class="nav-item" onclick="toggleJukebox()">
           <span class="nav-icon">🎪</span> Jukebox Display
@@ -1334,6 +1346,7 @@ body::after {
         <div class="np-title" id="np-title">Nothing playing</div>
         <div class="np-artist" id="np-artist">Select a track to begin</div>
         <div class="np-tags" id="np-tags"></div>
+        <div id="bingo-bridge-ind" style="display:none;margin-top:3px;font-size:9px;font-family:var(--font-heading);letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,121,160,0.85);">🎱 bingo linked</div>
       </div>
     </div>
     <div class="np-center">
@@ -1522,10 +1535,10 @@ const S = {
   trackIdx: -1,
   isPlaying: false,
   shuffle: false,
-  fadeMode: 'crossfade', // crossfade | clean | off
+  fadeMode: 'crossfade',
   freePlay: false,
   volume: 0.8,
-  cuePoints: {}, // trackId -> {bingo, triviaS, triviaE}
+  cuePoints: {},
   settings: { crossfade: 8, timer: 0, bpmMatch: true, cleanSkip: true },
   sessionId: null,
   sessionStart: null,
@@ -1535,7 +1548,12 @@ const S = {
   libSortDir: 1,
   plSearch: '',
   plSort: 'index',
-  plSortDir: 1
+  plSortDir: 1,
+  // ── Bingo Bridge ──────────────────────────────────────────────────────────
+  bingoLinked: false,
+  bingoCategoryId: null,
+  bingoCategories: [],
+  bingoDb: null,
 };
 
 // ═══════════════ AUDIO ENGINE ═══════════════
@@ -2720,16 +2738,147 @@ function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
 
 // Keyboard
-document.addEventListener('keydown',e=>{
-  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
-  if(e.code==='Space'){e.preventDefault();togglePlay();}
-  if(e.code==='ArrowRight') nextTrack();
-  if(e.code==='ArrowLeft') prevTrack();
-  if(e.code==='KeyF') toggleFreePlay();
+// ═══════════════ BINGO BRIDGE ═══════════════
+const BINGO_RTDB_CONFIG = {
+  apiKey:            "AIzaSyCu6aBUE8qJCCf5FRMipqQD-tGSPE78D3Y",
+  authDomain:        "bellamusicbingo.firebaseapp.com",
+  databaseURL:       "https://bellamusicbingo-default-rtdb.firebaseio.com",
+  projectId:         "bellamusicbingo",
+  storageBucket:     "bellamusicbingo.firebasestorage.app",
+  messagingSenderId: "657495697029",
+  appId:             "1:657495697029:web:3fe565cbe05455b7982bec"
+};
+
+function initBingoDb() {
+  if (S.bingoDb) return;
+  try {
+    const bingoApp = firebase.apps.find(a => a.name === 'bingo-bridge')
+      || firebase.initializeApp(BINGO_RTDB_CONFIG, 'bingo-bridge');
+    S.bingoDb = bingoApp.database();
+  } catch(e) {
+    console.error('Bingo bridge: RTDB init failed', e);
+    toast('Bingo bridge: could not connect');
+  }
+}
+
+async function loadBingoCategories() {
+  initBingoDb();
+  if (!S.bingoDb) return;
+  try {
+    const snap = await S.bingoDb.ref('landing/categories').once('value');
+    const data = snap.val() || {};
+    S.bingoCategories = Object.entries(data)
+      .map(([id, c]) => ({ id, title: c.title || id, order: c.order || 0 }))
+      .filter(c => c.title)
+      .sort((a, b) => a.order - b.order);
+    const sel = document.getElementById('bingo-cat-select');
+    sel.innerHTML = '<option value="">— select bingo category —</option>' +
+      S.bingoCategories.map(c => `<option value="${c.id}">${esc(c.title)}</option>`).join('');
+    if (S.bingoCategoryId) {
+      sel.value = S.bingoCategoryId;
+    }
+  } catch(e) {
+    console.error('Bingo bridge: failed to load categories', e);
+  }
+}
+
+function setBingoCategory(catId) {
+  const wasLinked = S.bingoLinked;
+  if (wasLinked) { S.bingoLinked = false; updateBingoLinkUI(); }
+  S.bingoCategoryId = catId || null;
+  if (wasLinked && catId) { S.bingoLinked = true; updateBingoLinkUI(); }
+  updateBingoLinkUI();
+}
+
+function toggleBingoLink() {
+  if (!S.bingoCategoryId) { toast('Select a bingo category first'); return; }
+  S.bingoLinked = !S.bingoLinked;
+  if (S.bingoLinked) initBingoDb();
+  updateBingoLinkUI();
+  toast(S.bingoLinked ? '🎱 Bingo link active!' : 'Bingo link off');
+}
+
+function updateBingoLinkUI() {
+  const btn    = document.getElementById('bingo-link-btn');
+  const status = document.getElementById('bingo-link-status');
+  const ind    = document.getElementById('bingo-bridge-ind');
+  const catName = S.bingoCategories.find(c => c.id === S.bingoCategoryId)?.title || S.bingoCategoryId || '';
+  if (S.bingoLinked && S.bingoCategoryId) {
+    btn.textContent = '🎱 Linked — click to unlink';
+    btn.style.color = 'var(--success)';
+    btn.style.borderColor = 'rgba(74,222,128,0.4)';
+    status.textContent = '\u2713 ' + catName;
+    status.style.color = 'var(--success)';
+    ind.style.display = 'block';
+  } else {
+    btn.textContent = '🎱 Activate Link';
+    btn.style.color = 'rgba(232,121,160,0.9)';
+    btn.style.borderColor = 'rgba(232,121,160,0.3)';
+    status.textContent = catName ? 'Category: ' + catName : 'Not linked';
+    status.style.color = 'var(--text-muted)';
+    ind.style.display = 'none';
+  }
+}
+
+function pingBingoApp(track) {
+  if (!S.bingoLinked || !S.bingoCategoryId || !S.bingoDb) return;
+  S.bingoDb.ref('sessions/' + S.bingoCategoryId + '/nowPlaying').set({
+    title:  track.title  || track.filename || '',
+    artist: track.artist || '',
+    at:     Date.now()
+  }).catch(e => console.warn('Bingo bridge: write failed', e));
+}
+
+// ── Auto-link when opened from the bingo app via ?bingo=categoryId ────────────
+function checkBingoLaunchParam() {
+  const params = new URLSearchParams(window.location.search);
+  const catId  = params.get('bingo');
+  if (!catId) return;
+  S.bingoCategoryId = catId;
+  // Categories may not be loaded yet — activate the link and let
+  // loadBingoCategories() set the dropdown value once it resolves.
+  S.bingoLinked = true;
+  initBingoDb();
+  updateBingoLinkUI();
+  toast('🎱 Bingo auto-linked from app!', 3500);
+}
+
+// Patch enterApp to run bridge setup after login
+const _origEnterApp = enterApp;
+function enterApp() {
+  _origEnterApp();
+  loadBingoCategories().then(() => {
+    // If we arrived via ?bingo= the categoryId is already set;
+    // update the dropdown now that options are populated.
+    if (S.bingoCategoryId) {
+      const sel = document.getElementById('bingo-cat-select');
+      sel.value = S.bingoCategoryId;
+      updateBingoLinkUI();
+    }
+  });
+  checkBingoLaunchParam();
+}
+
+// Patch playAt to fire the bingo ping on bingo-type tracks
+const _origPlayAt = playAt;
+async function playAt(idx) {
+  await _origPlayAt(idx);
+  const pl = S.currentPL;
+  const t  = pl?.tracks?.[idx];
+  if (t && S.bingoLinked && (pl.type === 'bingo' || t.bingoFlag)) {
+    pingBingoApp(t);
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.code === 'Space')      { e.preventDefault(); togglePlay(); }
+  if (e.code === 'ArrowRight') nextTrack();
+  if (e.code === 'ArrowLeft')  prevTrack();
+  if (e.code === 'KeyF')       toggleFreePlay();
 });
 
-// Offline notice
-if(!db) setTimeout(()=>toast('⚠ Firebase not configured — sync disabled',5000),1200);
+if (!db) setTimeout(() => toast('Firebase not configured — sync disabled', 5000), 1200);
 </script>
 </body>
 </html>

@@ -1495,15 +1495,15 @@ body::after {
 })();
 
 // ═══════════════ FIREBASE ═══════════════
-// Paste your Firebase config values below once you have them.
-// Leave blank to run in local mode (admin login still works).
+// Firebase config — shared with the bingo app so users/playlists sync across both.
 const FB_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey:            "AIzaSyCu6aBUE8qJCCf5FRMipqQD-tGSPE78D3Y",
+  authDomain:        "bellamusicbingo.firebaseapp.com",
+  databaseURL:       "https://bellamusicbingo-default-rtdb.firebaseio.com",
+  projectId:         "bellamusicbingo",
+  storageBucket:     "bellamusicbingo.firebasestorage.app",
+  messagingSenderId: "657495697029",
+  appId:             "1:657495697029:web:3fe565cbe05455b7982bec"
 };
 
 let db = null;
@@ -1514,7 +1514,8 @@ let db = null;
       return;
     }
     firebase.initializeApp(FB_CONFIG);
-    db = firebase.firestore();
+    // Use Realtime Database (same as the bingo app — no Firestore setup needed)
+    db = firebase.database();
     console.log('Belladonna: Firebase connected');
   } catch(e) {
     console.warn('Belladonna: Firebase error — local mode', e.message);
@@ -1617,9 +1618,9 @@ async function doLogin() {
   }
   if (!user && db) {
     try {
-      const snap = await db.collection('users').doc(u).get();
-      if (snap.exists) {
-        const d = snap.data();
+      const snap = await db.ref('player/users/' + u).once('value');
+      if (snap.exists()) {
+        const d = snap.val();
         if (d.password === p && d.active !== false) user = { username:u, name:d.name, role:d.role||'host' };
       }
     } catch(e) {}
@@ -1656,14 +1657,14 @@ async function logSession(user, status) {
     data.location = (j.city || '') + (j.region ? ', ' + j.region : '');
   } catch(e) { data.location = 'Unknown'; }
   if (db) {
-    try { const ref = await db.collection('sessions').add(data); S.sessionId = ref.id; } catch(e){}
+    try { const ref = db.ref('player/sessions').push(); await ref.set(data); S.sessionId = ref.key; } catch(e){}
   }
 }
 
 async function doLogout() {
   if (S.sessionId && db) {
     const mins = Math.round((new Date() - S.sessionStart)/60000);
-    try { await db.collection('sessions').doc(S.sessionId).update({ status:'ended', logoutTime:new Date().toISOString(), durationMinutes:mins }); } catch(e){}
+    try { await db.ref('player/sessions/' + S.sessionId).update({ status:'ended', logoutTime:new Date().toISOString(), durationMinutes:mins }); } catch(e){}
   }
   pauseAudio();
   S.user = null; S.currentPL = null; S.track = null;
@@ -1716,8 +1717,9 @@ function showView(v) {
 async function loadPlaylists() {
   if (db) {
     try {
-      const snap = await db.collection('playlists').get();
-      S.playlists = snap.docs.map(d=>({id:d.id,...d.data()}));
+      const snap = await db.ref('player/playlists').once('value');
+      const data = snap.val() || {};
+      S.playlists = Object.entries(data).map(([id,p])=>({id,...p}));
       renderSidePlaylists();
       return;
     } catch(e){}
@@ -1905,7 +1907,7 @@ async function createPlaylist() {
   if (!name) return;
   const pl = { name, type, timer, tracks:[], owner:S.user.username, shuffle:false, created:new Date().toISOString() };
   if (db) {
-    try { const r=await db.collection('playlists').add(pl); pl.id=r.id; } catch(e){}
+    try { const r = db.ref('player/playlists').push(); await r.set(pl); pl.id = r.key; } catch(e){}
   } else { pl.id='loc_'+Date.now(); }
   S.playlists.push(pl);
   try { localStorage.setItem('bella_playlists', JSON.stringify(S.playlists)); } catch(e){}
@@ -1918,7 +1920,7 @@ async function createPlaylist() {
 async function savePL(pl) {
   if (!pl?.id) return;
   if (db) {
-    try { await db.collection('playlists').doc(pl.id).set(pl); } catch(e){}
+    try { await db.ref('player/playlists/' + pl.id).set(pl); } catch(e){}
   }
   // Always also save to localStorage as backup
   try {
@@ -2488,8 +2490,9 @@ const tempCues={bingo:null,triviaS:null,triviaE:null};
 async function loadCuePoints() {
   if(!db) return;
   try {
-    const snap=await db.collection('cuepoints').get();
-    snap.docs.forEach(d=>{S.cuePoints[d.id]=d.data();});
+    const snap=await db.ref('player/cuepoints').once('value');
+    const data=snap.val()||{};
+    Object.entries(data).forEach(([id,v])=>{S.cuePoints[id]=v;});
   } catch(e){}
 }
 
@@ -2545,7 +2548,7 @@ async function saveCues() {
   if(tempCues.triviaS!=null) data.triviaS=tempCues.triviaS;
   if(tempCues.triviaE!=null) data.triviaE=tempCues.triviaE;
   S.cuePoints[editId]=data;
-  if(db){ try{await db.collection('cuepoints').doc(editId).set(data);}catch(e){} }
+  if(db){ try{await db.ref('player/cuepoints/'+editId).set(data);}catch(e){} }
   closeModal('modal-cue');
   renderTrackList();
   toast('Cue points saved ✓');
@@ -2554,7 +2557,7 @@ async function saveCues() {
 async function clearCues() {
   if(!editId) return;
   delete S.cuePoints[editId];
-  if(db){ try{await db.collection('cuepoints').doc(editId).delete();}catch(e){} }
+  if(db){ try{await db.ref('player/cuepoints/'+editId).remove();}catch(e){} }
   closeModal('modal-cue');
   renderTrackList();
   toast('Cue points cleared');
@@ -2564,8 +2567,8 @@ async function clearCues() {
 async function loadSettings() {
   if(!db) return;
   try {
-    const s=await db.collection('settings').doc('playback').get();
-    if(s.exists) { Object.assign(S.settings,s.data()); applySettings(); }
+    const s=await db.ref('player/settings/playback').once('value');
+    if(s.exists()) { Object.assign(S.settings,s.val()); applySettings(); }
   } catch(e){}
 }
 
@@ -2582,34 +2585,36 @@ async function saveSetting(k, v) {
   v=parseFloat(v);
   if(k==='crossfade'){S.settings.crossfade=v;document.getElementById('val-xfade').textContent=v+'s';}
   if(k==='timer'){S.settings.timer=v;document.getElementById('val-timer').textContent=v?v+'s':'Off';}
-  if(db){ try{await db.collection('settings').doc('playback').set(S.settings);}catch(e){} }
+  if(db){ try{await db.ref('player/settings/playback').set(S.settings);}catch(e){} }
 }
 
 async function toggleSetting(k) {
   if(!S.isAdmin) return;
   S.settings[k]=!S.settings[k];
   applySettings();
-  if(db){ try{await db.collection('settings').doc('playback').set(S.settings);}catch(e){} }
+  if(db){ try{await db.ref('player/settings/playback').set(S.settings);}catch(e){} }
 }
 
 // ═══════════════ ADMIN ═══════════════
 async function loadAdminData() {
   if(!db) return;
   try {
-    const [aSnap,lSnap,uSnap]=await Promise.all([
-      db.collection('sessions').where('status','==','active').get(),
-      db.collection('sessions').orderBy('loginTime','desc').limit(60).get(),
-      db.collection('users').get()
+    const [sSnap, uSnap] = await Promise.all([
+      db.ref('player/sessions').once('value'),
+      db.ref('player/users').once('value')
     ]);
-    const active_sessions=aSnap.docs.map(d=>d.data());
-    const all_sessions=lSnap.docs.map(d=>d.data());
-    const users=uSnap.docs.map(d=>({id:d.id,...d.data()}));
-    S._allSessions=all_sessions;
+    const all_sessions = Object.values(sSnap.val()||{});
+    const active_sessions = all_sessions.filter(s=>s.status==='active');
+    const users = Object.entries(uSnap.val()||{}).map(([id,u])=>({id,...u}));
+    // Sort sessions newest first, cap at 60
+    all_sessions.sort((a,b)=>new Date(b.loginTime)-new Date(a.loginTime));
+    const recent = all_sessions.slice(0,60);
+    S._allSessions=recent;
     renderActiveSessions(active_sessions);
-    renderSessionLog(all_sessions);
+    renderSessionLog(recent);
     renderUsers(users,active_sessions);
     const filter=document.getElementById('log-filter');
-    const names=[...new Set(all_sessions.map(s=>s.displayName))];
+    const names=[...new Set(recent.map(s=>s.displayName))];
     filter.innerHTML='<option value="">All Users</option>'+names.map(n=>`<option value="${n}">${n}</option>`).join('');
   } catch(e){ console.error(e); }
 }
@@ -2672,7 +2677,7 @@ async function createUser() {
   const userData={name,password,role:'host',active:true,created:new Date().toISOString()};
   if(db){
     try{
-      await db.collection('users').doc(username).set(userData);
+      await db.ref('player/users/' + username).set(userData);
       toast('Host "' + name + '" created — synced to Firebase');
       closeModal('modal-new-user');
       loadAdminData();
@@ -2715,7 +2720,7 @@ async function deleteUser(id) {
   if(!confirm('Delete user "' + id + '"?')) return;
   if(db){
     try{
-      await db.collection('users').doc(id).delete();
+      await db.ref('player/users/' + id).remove();
       toast('User deleted');
       loadAdminData();
     }catch(e){ toast('Delete failed — check Firebase'); }

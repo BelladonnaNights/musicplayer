@@ -615,21 +615,29 @@ html, body {
 }
 
 .sidebar-brand {
-  padding:20px 20px 16px;
-  border-bottom:1px solid var(--border);
+  padding:18px 20px 16px;
+  border-bottom:1px solid var(--border2);
   flex-shrink:0;
 }
-.brand-skull { font-size:15px; margin-right:6px; }
-.brand-name {
+.brand-wordmark {
+  display:flex; align-items:center; gap:0;
   font-family:var(--font-display);
-  font-size:16px; letter-spacing:.06em;
-  background:var(--gold-shine);
-  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  font-size:18px; letter-spacing:.04em; line-height:1;
 }
-.brand-sub {
-  font-family:var(--font-heading);
-  font-size:8px; letter-spacing:.2em; text-transform:uppercase;
-  color:var(--text3); margin-top:3px;
+.brand-word-bella {
+  color:var(--text);
+}
+.brand-word-music {
+  color:var(--gold);
+  margin-left:8px;
+}
+.brand-divider {
+  width:1px; height:18px; background:var(--border2);
+  margin:0 14px; flex-shrink:0;
+}
+.brand-subtitle {
+  font-family:var(--serif); font-style:italic;
+  font-size:13px; color:var(--text3); letter-spacing:.01em;
 }
 
 .sidebar-user {
@@ -1455,8 +1463,14 @@ html, body {
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
       <div class="sidebar-brand">
-        <div><span class="brand-skull">💀</span><span class="brand-name">BELLADONNA</span></div>
-        <div class="brand-sub">Host Player</div>
+        <div style="display:flex;align-items:center;">
+          <div class="brand-wordmark">
+            <span class="brand-word-bella">BELLADONNA</span>
+            <span class="brand-word-music">MUSIC</span>
+          </div>
+          <div class="brand-divider"></div>
+          <span class="brand-subtitle">Host Player</span>
+        </div>
       </div>
       <div class="sidebar-user">
         <div class="user-avatar" id="s-avatar">?</div>
@@ -1490,15 +1504,18 @@ html, body {
         <select class="select-input" id="bingo-cat-select" style="font-size:12px;padding:7px 10px;margin-bottom:8px;" onchange="setBingoCategory(this.value)">
           <option value="">— select bingo category —</option>
         </select>
-        <button class="btn-new-pl" id="bingo-link-btn" onclick="toggleBingoLink()" style="color:rgba(232,121,160,0.9);border-color:rgba(232,121,160,0.3);">
-          🎱 Activate Link
+        <button class="btn-new-pl" id="bingo-link-btn" onclick="toggleBingoLink()" style="color:var(--gold);border-color:var(--gold-border);">
+          Activate Link
+        </button>
+        <button class="btn-new-pl" id="bingo-open-btn" onclick="openBingoApp()" style="display:none;color:var(--gold);border-color:var(--gold-border);margin-top:4px;">
+          ♪ Open Bingo App
         </button>
       </div>
       <div class="sidebar-footer">
         <div class="nav-item" onclick="toggleJukebox()">
           <span class="nav-icon">🖥</span> Jukebox Display
         </div>
-        <div class="nav-item" onclick="doLogout()" style="color:var(--danger);margin-top:2px;">
+        <div class="nav-item" onclick="doLogout()" style="color:var(--text);margin-top:2px;">
           <span class="nav-icon">✕</span> Sign Out
         </div>
       </div>
@@ -2130,8 +2147,8 @@ function applyColWidths() {
   document.documentElement.style.setProperty('--col-widths', cols);
 }
 
-function wireColResize() {
-  const head = document.getElementById('track-head');
+function wireColResize(headId='track-head') {
+  const head = document.getElementById(headId);
   if (!head) return;
   const handles = head.querySelectorAll('.col-resize-handle');
   handles.forEach((handle, i) => {
@@ -2186,7 +2203,7 @@ function renderTrackList() {
     '<div id="track-rows">' + tracks.map((t,i)=>renderRow(t,i,t._origIdx)).join('') + '</div>';
 
   applyColWidths();
-  wireColResize();
+  wireColResize('track-head');
 
   // Wire up drag handles
   document.querySelectorAll('.track-row[draggable]').forEach(row => {
@@ -2474,7 +2491,12 @@ function renderLibrary() {
   if(!all){el.innerHTML='';return;}
   if(!tracks.length){el.innerHTML='<div class="empty"><div class="empty-icon" style="font-size:28px;">🔍</div><div class="empty-title">No matches</div><div class="empty-desc">Try a different search term.</div></div>';return;}
   el.innerHTML=
-    '<div class="track-table-head"><div>#</div><div></div><div class="col-sort '+(S.libSort==="title"?"active":"")+'" onclick="setLibSort(\'title\')">Title</div><div class="col-sort '+(S.libSort==="album"?"active":"")+'" onclick="setLibSort(\'album\')">Album</div><div class="col-sort '+(S.libSort==="bpm"?"active":"")+'" onclick="setLibSort(\'bpm\')" style="text-align:center">BPM</div><div class="col-sort '+(S.libSort==="duration"?"active":"")+'" onclick="setLibSort(\'duration\')" style="text-align:right">Time</div><div></div></div>' +
+    '<div class="track-table-head" id="lib-head"><div>#</div><div></div>' +
+    '<div class="col-sort '+(S.libSort==="title"?"active":"")+'" onclick="setLibSort(\'title\')">Title<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="album"?"active":"")+'" onclick="setLibSort(\'album\')">Album<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="bpm"?"active":"")+'" onclick="setLibSort(\'bpm\')" style="text-align:center">BPM<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="duration"?"active":"")+'" onclick="setLibSort(\'duration\')" style="text-align:right">Time<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
+    '<div></div></div>' +
     '<div>' + tracks.map((t,i)=>
       '<div class="track-row" ondblclick="addToCurrentPL(\''+t.id+'\')">' +
         '<div class="t-num">'+(i+1)+'</div><div></div>' +
@@ -2486,6 +2508,8 @@ function renderLibrary() {
         '<div class="t-actions" style="opacity:1;"><button class="t-btn" style="opacity:1;" onclick="addToCurrentPL(\''+t.id+'\')" title="Add to current playlist">＋</button></div>' +
       '</div>'
     ).join('') + '</div>';
+  applyColWidths();
+  wireColResize('lib-head');
 }
 
 function addToCurrentPL(id) {
@@ -3099,6 +3123,10 @@ document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{
 
 // Keyboard
 // ═══════════════ BINGO BRIDGE ═══════════════
+// Set this to wherever your bingo app.html lives.
+// Must match the same location you set MEDIA_PLAYER_URL in app.html.
+const BINGO_APP_URL = 'app.html';
+
 const BINGO_RTDB_CONFIG = {
   apiKey:            "AIzaSyCu6aBUE8qJCCf5FRMipqQD-tGSPE78D3Y",
   authDomain:        "bellamusicbingo.firebaseapp.com",
@@ -3166,21 +3194,24 @@ function updateBingoLinkUI() {
   const btn    = document.getElementById('bingo-link-btn');
   const status = document.getElementById('bingo-link-status');
   const ind    = document.getElementById('bingo-bridge-ind');
+  const openBtn = document.getElementById('bingo-open-btn');
   const catName = S.bingoCategories.find(c => c.id === S.bingoCategoryId)?.title || S.bingoCategoryId || '';
   if (S.bingoLinked && S.bingoCategoryId) {
     btn.textContent = '🎱 Linked — click to unlink';
     btn.style.color = 'var(--success)';
-    btn.style.borderColor = 'rgba(74,222,128,0.4)';
+    btn.style.borderColor = 'rgba(74,158,114,0.4)';
     status.textContent = '\u2713 ' + catName;
     status.style.color = 'var(--success)';
     ind.style.display = 'block';
+    if (openBtn) openBtn.style.display = '';
   } else {
-    btn.textContent = '🎱 Activate Link';
-    btn.style.color = 'rgba(232,121,160,0.9)';
-    btn.style.borderColor = 'rgba(232,121,160,0.3)';
+    btn.textContent = 'Activate Link';
+    btn.style.color = 'var(--gold)';
+    btn.style.borderColor = 'var(--gold-border)';
     status.textContent = catName ? 'Category: ' + catName : 'Not linked';
     status.style.color = 'var(--text-muted)';
     ind.style.display = 'none';
+    if (openBtn) openBtn.style.display = 'none';
   }
 }
 
@@ -3191,6 +3222,15 @@ function pingBingoApp(track) {
     artist: track.artist || '',
     at:     Date.now()
   }).catch(e => console.warn('Bingo bridge: write failed', e));
+}
+
+// Opens the bingo app pre-linked to this player's current session.
+// Mirrors what "Open Media Player" does from the bingo side.
+function openBingoApp() {
+  if (!S.bingoCategoryId) { toast('Activate a bingo link first'); return; }
+  if (!S.bingoSessionKey) { toast('Activate a bingo link first'); return; }
+  const url = `${BINGO_APP_URL}?id=${encodeURIComponent(S.bingoCategoryId)}&session=${encodeURIComponent(S.bingoSessionKey)}`;
+  window.open(url, '_blank');
 }
 
 function checkBingoLaunchParam() {

@@ -1689,14 +1689,16 @@ html, body {
         <div class="np-title" id="np-title">Nothing playing</div>
         <div class="np-artist" id="np-artist">Select a track to begin</div>
         <div class="np-tags" id="np-tags"></div>
-        <div id="bingo-bridge-ind" style="display:none;margin-top:3px;font-size:9px;font-family:var(--font-heading);letter-spacing:0.12em;text-transform:uppercase;color:rgba(232,121,160,0.85);">🎱 bingo linked</div>
+        <div id="bingo-bridge-ind" style="display:none;margin-top:3px;font-size:9px;font-family:var(--font-heading);letter-spacing:0.12em;text-transform:uppercase;color:var(--gold2);">◈ Bingo Linked</div>
       </div>
     </div>
     <div class="np-center">
       <div class="np-buttons">
-        <button class="ctrl" onclick="prevTrack()" title="Previous">⏮</button>
+        <button class="ctrl" onclick="prevTrack('crossfade')" title="⇤ Crossfade to previous track" style="font-size:14px;opacity:.7">⇤</button>
+        <button class="ctrl" onclick="prevTrack('clean')" title="⏮ Instant cut to previous track">⏮</button>
         <button class="ctrl ctrl-play" id="btn-play" onclick="togglePlay()">▶</button>
-        <button class="ctrl" onclick="nextTrack()" title="Next">⏭</button>
+        <button class="ctrl" onclick="nextTrack('clean')" title="⏭ Instant cut to next track">⏭</button>
+        <button class="ctrl" onclick="nextTrack('crossfade')" title="⇥ Crossfade to next track" style="font-size:14px;opacity:.7">⇥</button>
       </div>
       <div class="np-progress">
         <span class="prog-time" id="pt-cur">0:00</span>
@@ -1824,6 +1826,7 @@ html, body {
     <div class="field"><label class="field-label">Title</label><input class="field-input" id="et-title" placeholder="Song title"></div>
     <div class="field"><label class="field-label">Artist</label><input class="field-input" id="et-artist" placeholder="Artist name"></div>
     <div class="field"><label class="field-label">Album</label><input class="field-input" id="et-album" placeholder="Album name"></div>
+    <div class="field"><label class="field-label">BPM <span style="font-size:10px;color:var(--text3);font-family:var(--serif);font-style:italic;">(optional)</span></label><input class="field-input" id="et-bpm" type="number" min="1" max="300" placeholder="e.g. 128"></div>
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeModal('modal-edit-track')">Cancel</button>
       <button class="btn-save" onclick="saveTrackEdit()">Save</button>
@@ -2949,10 +2952,42 @@ function togglePlay() {
   if(!S.track){ if(S.currentPL?.tracks?.length) playAt(0); return; }
   if(S.isPlaying) pauseAudio(); else resumeAudio();
 }
-function pauseAudio(){ active.pause(); S.isPlaying=false; updatePlayBtn(); clearTimers(); }
-function resumeAudio(){ active.play().catch(console.error); S.isPlaying=true; updatePlayBtn(); if(S.track) scheduleAdvance(S.track, active.currentTime, 0); }
+function pauseAudio(){
+  active.pause();
+  S.isPlaying=false;
+  updatePlayBtn();
+  // Save remaining timer time so resume can continue from where we left off
+  const timer = S.freePlay ? 0 : (S.currentPL?.timer || S.settings.timer || 0);
+  if (timer > 0 && timerRingTotal > 0) {
+    const elapsed = (Date.now() - timerRingStart) / 1000;
+    timerPauseRemaining = Math.max(0, timerRingTotal - elapsed);
+  } else {
+    timerPauseRemaining = 0;
+  }
+  clearTimers();
+}
+function resumeAudio(){
+  active.play().catch(console.error);
+  S.isPlaying=true;
+  updatePlayBtn();
+  if (S.track) {
+    const timer = S.freePlay ? 0 : (S.currentPL?.timer || S.settings.timer || 0);
+    if (timer > 0 && timerPauseRemaining > 0) {
+      // Resume the timer ring from where it was paused
+      clearTimers();
+      timerRingTotal = timer;
+      timerRingStart = Date.now() - (timer - timerPauseRemaining) * 1000;
+      document.getElementById('timer-ring').classList.add('visible');
+      updateTimerRing();
+      timerTimeout = setTimeout(()=>nextTrack(), timerPauseRemaining * 1000);
+      timerPauseRemaining = 0;
+    } else {
+      scheduleAdvance(S.track, active.currentTime, 0);
+    }
+  }
+}
 
-function nextTrack() {
+function nextTrack(forceMode) {
   const pl=S.currentPL; if(!pl?.tracks?.length) return;
   let next;
   if(S.shuffle) {
@@ -2960,14 +2995,16 @@ function nextTrack() {
   } else {
     next=S.trackIdx+1; if(next>=pl.tracks.length) next=0;
   }
-  playAt(next);
+  if (forceMode) { const saved=S.fadeMode; S.fadeMode=forceMode; playAt(next).then?.(()=>S.fadeMode=saved)||setTimeout(()=>S.fadeMode=saved,2000); }
+  else playAt(next);
 }
 
-function prevTrack() {
-  if(active.currentTime>3){ active.currentTime=0; return; }
+function prevTrack(forceMode) {
+  if(!forceMode && active.currentTime>3){ active.currentTime=0; return; }
   const pl=S.currentPL; if(!pl?.tracks?.length) return;
   let prev=S.trackIdx-1; if(prev<0) prev=pl.tracks.length-1;
-  playAt(prev);
+  if (forceMode) { const saved=S.fadeMode; S.fadeMode=forceMode; playAt(prev).then?.(()=>S.fadeMode=saved)||setTimeout(()=>S.fadeMode=saved,2000); }
+  else playAt(prev);
 }
 
 function scheduleAdvance(t, startTime, endTime) {
@@ -3008,7 +3045,7 @@ function scheduleAdvance(t, startTime, endTime) {
 function clearTimers() { clearTimeout(timerTimeout); clearTimeout(xfadeTimeout); hideTimerRing(); }
 
 // Timer ring
-let timerRingTotal=0, timerRingStart=0;
+let timerRingTotal=0, timerRingStart=0, timerPauseRemaining=0;
 function showTimerRing(seconds) {
   timerRingTotal=seconds; timerRingStart=Date.now();
   document.getElementById('timer-ring').classList.add('visible');
@@ -3476,35 +3513,67 @@ function editTrack() {
   document.getElementById('et-title').value  = t.title  || '';
   document.getElementById('et-artist').value = t.artist || '';
   document.getElementById('et-album').value  = t.album  || '';
+  document.getElementById('et-bpm').value    = t.bpm    || '';
   openModal('modal-edit-track');
 }
 
-function saveTrackEdit() {
+async function saveTrackEdit() {
   const title  = document.getElementById('et-title').value.trim();
   const artist = document.getElementById('et-artist').value.trim();
   const album  = document.getElementById('et-album').value.trim();
+  const bpmVal = document.getElementById('et-bpm').value.trim();
+  const bpm    = bpmVal ? (parseFloat(bpmVal) || null) : null;
   if (!title) { toast('Title cannot be empty'); return; }
-  // Update in library
+
   const libTrack = S.library.find(t=>t.id===_editTrackId);
-  if (libTrack) { libTrack.title=title; libTrack.artist=artist; libTrack.album=album; }
+  const artChanged = libTrack && (libTrack.artist !== artist || libTrack.album !== album);
+
+  // Update in library
+  if (libTrack) { libTrack.title=title; libTrack.artist=artist; libTrack.album=album; libTrack.bpm=bpm; }
+
   // Update in all playlists
   S.playlists.forEach(pl => {
     (pl.tracks||[]).forEach(t => {
-      if (t.id===_editTrackId) { t.title=title; t.artist=artist; t.album=album; }
+      if (t.id===_editTrackId) { t.title=title; t.artist=artist; t.album=album; t.bpm=bpm; }
     });
     if ((pl.tracks||[]).some(t=>t.id===_editTrackId)) savePL(pl);
   });
+
   // Update currently playing if needed
   if (S.track?.id===_editTrackId) {
     S.track.title=title; S.track.artist=artist; S.track.album=album;
     document.getElementById('np-title').textContent=title;
     document.getElementById('np-artist').textContent=artist;
   }
-  saveLibraryMeta();
+
   closeModal('modal-edit-track');
+  toast('Saved — fetching artwork…');
+
+  // Re-fetch artwork if artist or album changed
+  if (artChanged && libTrack) {
+    const newArt = await fetchArt(artist, title, album);
+    if (newArt) {
+      libTrack.artUrl = newArt;
+      // Propagate to playlists
+      S.playlists.forEach(pl => {
+        (pl.tracks||[]).forEach(t => { if (t.id===_editTrackId) t.artUrl=newArt; });
+      });
+      if (S.track?.id===_editTrackId) {
+        S.track.artUrl = newArt;
+        const artEl = document.getElementById('np-art');
+        if (artEl) artEl.innerHTML = '<img src="'+newArt+'">';
+      }
+      toast('Artwork updated!');
+    } else {
+      toast('Track info saved (no artwork found)');
+    }
+  } else {
+    toast('Track info updated');
+  }
+
+  saveLibraryMeta();
   renderLibrary();
   renderTrackList();
-  toast('Track info updated');
 }
 
 // Close modals on backdrop click

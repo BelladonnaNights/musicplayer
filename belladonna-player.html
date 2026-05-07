@@ -577,10 +577,10 @@ html, body {
 .col-sort.active { color:var(--gold2); }
 .sort-arrow { font-size:10px; opacity:.7; }
 
-/* Resizable columns */
+/* Resizable columns — widths applied directly via JS inline style */
 .track-table-head, .track-row {
   display:grid;
-  grid-template-columns: var(--col-widths, 32px 32px 44px 1fr 1fr 60px 60px 80px);
+  grid-template-columns: 32px 32px 44px 1fr 1fr 60px 60px 80px;
   gap:0 8px; align-items:center;
 }
 .col-resize-handle {
@@ -596,15 +596,7 @@ html, body {
 
 /* Responsive */
 @media(max-width:680px) {
-  .track-table-head, .track-row { grid-template-columns:28px 1fr 56px 68px; }
-  .t-num-col,.t-album,.t-bpm { display:none; }
-  .np-progress { width:180px; }
-  .np-right { display:none; }
-}
-
-/* Responsive */
-@media(max-width:680px) {
-  .track-table-head, .track-row { grid-template-columns:28px 1fr 56px 68px; }
+  .track-table-head, .track-row { grid-template-columns:28px 1fr 56px 68px !important; }
   .t-num-col,.t-album,.t-bpm { display:none; }
   .np-progress { width:180px; }
   .np-right { display:none; }
@@ -1494,10 +1486,10 @@ html, body {
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
       <div class="sidebar-brand">
-        <div style="display:flex;align-items:center;">
-          <div class="brand-wordmark">
-            <span class="brand-word-bella">BELLADONNA</span>
-            <span class="brand-word-music">MUSIC</span>
+        <div style="display:flex;align-items:center;gap:0;">
+          <img id="sidebar-logo" src="" alt="" style="height:28px;width:28px;object-fit:contain;border-radius:4px;margin-right:8px;display:none;">
+          <div class="brand-wordmark" style="letter-spacing:.01em;">
+            <span class="brand-word-bella">BELLADONNA</span><span class="brand-word-music" style="margin-left:5px;">MUSIC</span>
           </div>
           <div class="brand-divider"></div>
           <span class="brand-subtitle">Host Player</span>
@@ -1517,6 +1509,9 @@ html, body {
         <div class="nav-item" id="nav-library" onclick="showView('library')">
           <span class="nav-icon">◫</span> Library
         </div>
+        <div class="nav-item" id="nav-shuffle" onclick="toggleShuffle()" title="Shuffle playback order">
+          <span class="nav-icon">⇄</span> Shuffle
+        </div>
         <div class="nav-item" id="nav-admin" onclick="showView('admin')" style="display:none">
           <span class="nav-icon">⚙</span> Admin
         </div>
@@ -1531,8 +1526,11 @@ html, body {
           <button class="btn-new-pl" onclick="openModal('modal-new-pl')">+ New Playlist</button>
         </div>
         <!-- ── Bingo Bridge ──────────────────────────────────────────────── -->
-        <div class="sidebar-divider">Bingo Link</div>
-        <div style="padding:0 12px 12px;">
+        <div class="sidebar-divider" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding-right:16px;" onclick="toggleBingoSection()">
+          <span>Bingo Link</span>
+          <span id="bingo-section-arrow" style="font-size:10px;transition:transform .2s;display:inline-block;color:var(--text3);">▾</span>
+        </div>
+        <div id="bingo-section-body" style="display:none;padding:0 12px 12px;">
           <div id="bingo-link-status" style="font-size:11px;color:var(--text-muted);padding:4px 0 8px;font-style:italic;">Not linked</div>
           <select class="select-input" id="bingo-cat-select" style="font-size:12px;padding:7px 10px;margin-bottom:8px;" onchange="setBingoCategory(this.value)">
             <option value="">— select bingo category —</option>
@@ -1580,6 +1578,7 @@ html, body {
             </div>
             <div class="pl-controls" id="pl-controls" style="display:none;">
               <button class="btn-sm" id="btn-shuffle" onclick="toggleShuffle()">⇄ Shuffle</button>
+              <button class="btn-sm" id="btn-reset-order" onclick="resetOrder()" style="display:none;" title="Restore original playlist order">↺ Reset Order</button>
               <button class="btn-sm" id="btn-mode" onclick="cycleFadeMode()">↔ Crossfade</button>
             </div>
           </div>
@@ -1899,6 +1898,7 @@ const S = {
   trackIdx: -1,
   isPlaying: false,
   shuffle: false,
+  shuffledIndices: null, // null = original order; array = shuffled display order
   fadeMode: 'crossfade', // crossfade | clean | off
   freePlay: false,
   volume: 0.8,
@@ -2054,6 +2054,7 @@ function enterApp() {
   loadCuePoints();
   loadLibraryMeta();
   if (S.isAdmin) loadAdminData();
+  loadSidebarLogo();
 
   showView('library'); // land on Library by default
 
@@ -2066,6 +2067,23 @@ function enterApp() {
     }
   });
   checkBingoLaunchParam();
+}
+
+// ── Sidebar logo ──────────────────────────────────────────────────────────────
+function loadSidebarLogo() {
+  if (!S.bingoDb) { initBingoDb(); }
+  // Try to load logo from bingo Firebase settings
+  const tryLoad = (dbRef) => {
+    dbRef.ref('landing/settings/logoUrl').once('value').then(snap => {
+      const url = snap.val();
+      if (url) {
+        const img = document.getElementById('sidebar-logo');
+        if (img) { img.src=url; img.style.display='block'; }
+      }
+    }).catch(()=>{});
+  };
+  if (S.bingoDb) tryLoad(S.bingoDb);
+  else if (db) tryLoad(db);
 }
 
 // ═══════════════ SIDEBAR ═══════════════
@@ -2138,7 +2156,7 @@ function renderSidePlaylists() {
       onclick="selectPL('${p.id}')"
       oncontextmenu="showPLMenu(event,'${p.id}')">
       <span style="cursor:grab;opacity:0.4;margin-right:2px;font-size:13px;">⠿</span>
-      <span>${p.type==='bingo'?'🎱':'♪'}</span>
+      <span>${p.type==='bingo'?'◈':'♪'}</span>
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;">${esc(p.name)}</span>
       <span class="pl-badge ${p.type}">${p.type==='bingo'?'BINGO':'GEN'}</span>
     </div>`).join('');
@@ -2236,7 +2254,13 @@ async function selectPL(id) {
 function getFilteredPlaylist() {
   const pl = S.currentPL;
   if (!pl?.tracks) return [];
-  let indexed = pl.tracks.map((t,i)=>({...t, _origIdx:i}));
+  // Use shuffledIndices for display order if shuffle is on
+  let indexed;
+  if (S.shuffledIndices && S.shuffle) {
+    indexed = S.shuffledIndices.map(i => ({...pl.tracks[i], _origIdx:i}));
+  } else {
+    indexed = pl.tracks.map((t,i)=>({...t, _origIdx:i}));
+  }
   const q = S.plSearch.toLowerCase().trim();
   if (q) indexed = indexed.filter(t =>
     (t.title||'').toLowerCase().includes(q) ||
@@ -2284,45 +2308,51 @@ function updatePlSortBtns() {
 let colWidths = [32, 32, 44, 220, 180, 60, 60, 80];
 
 function applyColWidths() {
-  const template = colWidths.map(w => w === 0 ? '1fr' : w+'px').join(' ');
-  // Use fr units for title (idx 3) and album (idx 4) if they haven't been manually resized
-  const t = colWidths[3] < 500 ? colWidths[3]+'px' : '1fr';
-  const a = colWidths[4] < 500 ? colWidths[4]+'px' : '1fr';
-  const cols = `${colWidths[0]}px ${colWidths[1]}px ${colWidths[2]}px ${t} ${a} ${colWidths[5]}px ${colWidths[6]}px ${colWidths[7]}px`;
-  document.documentElement.style.setProperty('--col-widths', cols);
+  const cols = `${colWidths[0]}px ${colWidths[1]}px ${colWidths[2]}px ${colWidths[3]}px ${colWidths[4]}px ${colWidths[5]}px ${colWidths[6]}px ${colWidths[7]}px`;
+  // Apply directly as inline style to every head and row — CSS vars are unreliable here
+  document.querySelectorAll('.track-table-head, .track-row').forEach(el => {
+    el.style.gridTemplateColumns = cols;
+  });
 }
 
 function wireColResize(headId='track-head') {
   const head = document.getElementById(headId);
   if (!head) return;
   // Map handle DOM index → colWidths index
-  // Header: #(0) | wave | art | title(3) | album(4) | bpm(5) | time(6) | actions
-  // Handles sit on: #, title, album, bpm, time → colWidths[0,3,4,5,6]
+  // Grid cols: # | wave | art | title | album | bpm | time | actions
+  // Handles on: #(→0), title(→3), album(→4), bpm(→5), time(→6)
   const colMap = headId === 'lib-head'
-    ? [3, 4, 5, 6]   // lib header has no # resize handle
+    ? [3, 4, 5, 6]
     : [0, 3, 4, 5, 6];
   const handles = head.querySelectorAll('.col-resize-handle');
   handles.forEach((handle, i) => {
     const colIdx = colMap[i] !== undefined ? colMap[i] : i;
-    handle.addEventListener('mousedown', e => {
+    // Use onmousedown directly to avoid capture issues
+    handle.onmousedown = function(e) {
       e.preventDefault();
       e.stopPropagation();
-      handle.classList.add('dragging');
       const startX = e.clientX;
       const startW = colWidths[colIdx];
+      handle.classList.add('dragging');
+      // Overlay prevents losing the drag when moving over iframes/text
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;cursor:col-resize;';
+      document.body.appendChild(overlay);
       const onMove = ev => {
+        ev.preventDefault();
         const delta = ev.clientX - startX;
         colWidths[colIdx] = Math.max(40, startW + delta);
         applyColWidths();
       };
       const onUp = () => {
         handle.classList.remove('dragging');
+        overlay.remove();
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
-    });
+    };
   });
 }
 
@@ -2345,11 +2375,11 @@ function renderTrackList() {
   }
   wrap.innerHTML =
     '<div class="track-table-head" id="track-head">' +
-      '<div class="col-sort '+(S.plSort==="index"?"active":"")+'" onclick="setPlSort(\'index\')">#<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div><div></div>' +
-      '<div class="col-sort '+(S.plSort==="title"?"active":"")+'" onclick="setPlSort(\'title\')">Title<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
-      '<div class="col-sort '+(S.plSort==="album"?"active":"")+'" onclick="setPlSort(\'album\')">Album<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
-      '<div class="col-sort '+(S.plSort==="bpm"?"active":"")+'" onclick="setPlSort(\'bpm\')" style="text-align:center">BPM<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
-      '<div class="col-sort '+(S.plSort==="duration"?"active":"")+'" onclick="setPlSort(\'duration\')" style="text-align:right">Time<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
+      '<div class="col-sort '+(S.plSort==="index"?"active":"")+'" onclick="setPlSort(\'index\')">#<div class="col-resize-handle"></div></div><div></div>' +
+      '<div class="col-sort '+(S.plSort==="title"?"active":"")+'" onclick="setPlSort(\'title\')">Title<div class="col-resize-handle"></div></div>' +
+      '<div class="col-sort '+(S.plSort==="album"?"active":"")+'" onclick="setPlSort(\'album\')">Album<div class="col-resize-handle"></div></div>' +
+      '<div class="col-sort '+(S.plSort==="bpm"?"active":"")+'" onclick="setPlSort(\'bpm\')" style="text-align:center">BPM<div class="col-resize-handle"></div></div>' +
+      '<div class="col-sort '+(S.plSort==="duration"?"active":"")+'" onclick="setPlSort(\'duration\')" style="text-align:right">Time<div class="col-resize-handle"></div></div>' +
       '<div></div>' +
     '</div>' +
     '<div id="track-rows">' + tracks.map((t,i)=>renderRow(t,i,t._origIdx)).join('') + '</div>';
@@ -2758,10 +2788,10 @@ function renderLibrary() {
   if(!tracks.length){el.innerHTML='<div class="empty"><div class="empty-icon" style="font-size:28px;">🔍</div><div class="empty-title">No matches</div><div class="empty-desc">Try a different search term.</div></div>';return;}
   el.innerHTML=
     '<div class="track-table-head" id="lib-head"><div>#</div><div></div>' +
-    '<div class="col-sort '+(S.libSort==="title"?"active":"")+'" onclick="setLibSort(\'title\')">Title<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
-    '<div class="col-sort '+(S.libSort==="album"?"active":"")+'" onclick="setLibSort(\'album\')">Album<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
-    '<div class="col-sort '+(S.libSort==="bpm"?"active":"")+'" onclick="setLibSort(\'bpm\')" style="text-align:center">BPM<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
-    '<div class="col-sort '+(S.libSort==="duration"?"active":"")+'" onclick="setLibSort(\'duration\')" style="text-align:right">Time<div class="col-resize-handle" onclick="event.stopPropagation()"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="title"?"active":"")+'" onclick="setLibSort(\'title\')">Title<div class="col-resize-handle"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="album"?"active":"")+'" onclick="setLibSort(\'album\')">Album<div class="col-resize-handle"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="bpm"?"active":"")+'" onclick="setLibSort(\'bpm\')" style="text-align:center">BPM<div class="col-resize-handle"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="duration"?"active":"")+'" onclick="setLibSort(\'duration\')" style="text-align:right">Time<div class="col-resize-handle"></div></div>' +
     '<div></div></div>' +
     '<div>' + tracks.map((t,i)=>
       '<div class="track-row" ondblclick="playFromLibrary(\''+t.id+'\')">' +
@@ -2839,8 +2869,8 @@ async function playFromLibrary(id) {
   updateNowPlaying(t, false, false);
   // Bingo bridge — ping whenever linked
   if (S.bingoLinked) pingBingoApp(t);
-  // Switch to Now Playing so the user can see what's playing
-  showView('player');
+  // Stay in library — don't switch views
+  highlightRow();
 }
 
 // ═══════════════ PLAYBACK ═══════════════
@@ -2990,8 +3020,11 @@ function resumeAudio(){
 function nextTrack(forceMode) {
   const pl=S.currentPL; if(!pl?.tracks?.length) return;
   let next;
-  if(S.shuffle) {
-    do { next=Math.floor(Math.random()*pl.tracks.length); } while(pl.tracks.length>1 && next===S.trackIdx);
+  if (S.shuffle && S.shuffledIndices?.length) {
+    // Find current position in shuffled order, advance to next
+    const pos = S.shuffledIndices.indexOf(S.trackIdx);
+    const nextPos = (pos + 1) % S.shuffledIndices.length;
+    next = S.shuffledIndices[nextPos];
   } else {
     next=S.trackIdx+1; if(next>=pl.tracks.length) next=0;
   }
@@ -3002,7 +3035,14 @@ function nextTrack(forceMode) {
 function prevTrack(forceMode) {
   if(!forceMode && active.currentTime>3){ active.currentTime=0; return; }
   const pl=S.currentPL; if(!pl?.tracks?.length) return;
-  let prev=S.trackIdx-1; if(prev<0) prev=pl.tracks.length-1;
+  let prev;
+  if (S.shuffle && S.shuffledIndices?.length) {
+    const pos = S.shuffledIndices.indexOf(S.trackIdx);
+    const prevPos = (pos - 1 + S.shuffledIndices.length) % S.shuffledIndices.length;
+    prev = S.shuffledIndices[prevPos];
+  } else {
+    prev=S.trackIdx-1; if(prev<0) prev=pl.tracks.length-1;
+  }
   if (forceMode) { const saved=S.fadeMode; S.fadeMode=forceMode; playAt(prev).then?.(()=>S.fadeMode=saved)||setTimeout(()=>S.fadeMode=saved,2000); }
   else playAt(prev);
 }
@@ -3093,7 +3133,46 @@ function seekTo(e) {
 }
 
 function setVol(v) { S.volume=parseFloat(v); if(!isFading) active.volume=S.volume; }
-function toggleShuffle() { S.shuffle=!S.shuffle; document.getElementById('btn-shuffle').classList.toggle('active',S.shuffle); if(S.currentPL){S.currentPL.shuffle=S.shuffle;savePL(S.currentPL);} }
+function toggleShuffle() {
+  S.shuffle = !S.shuffle;
+  const btn = document.getElementById('btn-shuffle');
+  const nav = document.getElementById('nav-shuffle');
+  const resetBtn = document.getElementById('btn-reset-order');
+  if (btn) btn.classList.toggle('active', S.shuffle);
+  if (nav) nav.classList.toggle('active', S.shuffle);
+  if (resetBtn) resetBtn.style.display = S.shuffle ? '' : 'none';
+  if (S.shuffle && S.currentPL?.tracks?.length) {
+    // Build a shuffled index array — Fisher-Yates on track indices
+    const n = S.currentPL.tracks.length;
+    const arr = Array.from({length:n}, (_,i)=>i);
+    for (let i=n-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+    // If something is playing, put it first so it keeps playing
+    if (S.trackIdx >= 0) {
+      const pos = arr.indexOf(S.trackIdx);
+      if (pos > 0) { arr.splice(pos,1); arr.unshift(S.trackIdx); }
+    }
+    S.shuffledIndices = arr;
+  } else {
+    S.shuffledIndices = null;
+  }
+  if (S.currentPL) { S.currentPL.shuffle=S.shuffle; savePL(S.currentPL); }
+  renderTrackList();
+  toast(S.shuffle ? '⇄ Shuffle on' : 'Shuffle off');
+}
+
+function resetOrder() {
+  S.shuffle = false;
+  S.shuffledIndices = null;
+  const btn = document.getElementById('btn-shuffle');
+  const nav = document.getElementById('nav-shuffle');
+  const resetBtn = document.getElementById('btn-reset-order');
+  if (btn) btn.classList.remove('active');
+  if (nav) nav.classList.remove('active');
+  if (resetBtn) resetBtn.style.display = 'none';
+  if (S.currentPL) { S.currentPL.shuffle=false; savePL(S.currentPL); }
+  renderTrackList();
+  toast('↺ Order restored');
+}
 function cycleFadeMode() {
   const modes=['crossfade','clean','off'];
   const labels={crossfade:'↔ Crossfade',clean:'⚡ Clean Cut',off:'— No Fade'};
@@ -3119,8 +3198,11 @@ function updateNowPlaying(t, isBingo, isTrivia) {
 }
 
 function highlightRow() {
-  document.querySelectorAll('.track-row[id^="tr-"]').forEach((r,i)=>{
-    r.classList.toggle('playing', parseInt(r.id.replace('tr-',''))===S.trackIdx);
+  // Only highlight if currently playing from the displayed playlist
+  const showHighlight = S.currentPL && S.currentPL.id !== '__library__';
+  document.querySelectorAll('.track-row[id^="tr-"]').forEach(r=>{
+    const rowIdx = parseInt(r.id.replace('tr-',''));
+    r.classList.toggle('playing', showHighlight && rowIdx===S.trackIdx);
   });
 }
 
@@ -3595,6 +3677,14 @@ const BINGO_RTDB_CONFIG = {
   appId:             "1:657495697029:web:3fe565cbe05455b7982bec"
 };
 
+function toggleBingoSection() {
+  const body  = document.getElementById('bingo-section-body');
+  const arrow = document.getElementById('bingo-section-arrow');
+  const open  = body.style.display !== 'none';
+  body.style.display  = open ? 'none' : '';
+  arrow.style.transform = open ? '' : 'rotate(180deg)';
+}
+
 function initBingoDb() {
   if (S.bingoDb) return;
   try {
@@ -3695,13 +3785,16 @@ function checkBingoLaunchParam() {
   const params = new URLSearchParams(window.location.search);
   const catId  = params.get('bingo');
   if (!catId) return;
-  const sessionKey = params.get('session') || catId; // fallback to catId for manual linking
+  const sessionKey = params.get('session') || catId;
   S.bingoCategoryId  = catId;
   S.bingoSessionKey  = sessionKey;
   S.bingoLinked = true;
   initBingoDb();
   updateBingoLinkUI();
-  toast('🎱 Bingo auto-linked from app!', 3500);
+  toast('◈ Bingo linked!', 3000);
+  // Clear the URL params so a page refresh does NOT re-link automatically
+  const clean = window.location.pathname;
+  window.history.replaceState({}, '', clean);
 }
 
 document.addEventListener('keydown', e => {

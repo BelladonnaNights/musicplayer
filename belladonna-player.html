@@ -205,14 +205,14 @@ html, body {
 }
 
 /* ═══════════════ APP SHELL ═══════════════ */
-#screen-app { flex-direction:column; overflow:hidden; }
-.app-body { flex:1; display:flex; overflow:hidden; }
+#screen-app { flex-direction:row; overflow:hidden; }
+.app-body { flex:1; display:flex; overflow:hidden; min-height:0; }
 
 /* backdrop no longer used but keep class harmless */
 .sidebar-backdrop { display:none; }
 
 /* ═══════════════ MAIN CONTENT ═══════════════ */
-.main-content { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+.main-content { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; min-height:0; }
 
 .topbar {
   height:54px; min-height:54px;
@@ -683,9 +683,15 @@ html, body {
   border-top:1px solid var(--border); margin-top:4px;
 }
 
-.sidebar-playlists { flex:1; overflow-y:auto; padding:0 10px; }
-.sidebar-playlists::-webkit-scrollbar { width:3px; }
-.sidebar-playlists::-webkit-scrollbar-thumb { background:rgba(201,168,76,.2); border-radius:2px; }
+/* Sidebar scroll zone — contains playlists + new button + bingo link */
+.sidebar-scroll {
+  flex:1; overflow-y:auto; min-height:0;
+}
+.sidebar-scroll::-webkit-scrollbar { width:3px; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background:rgba(201,168,76,.2); border-radius:2px; }
+
+/* Playlists list inside the scroll zone */
+.sidebar-playlists { padding:0 10px; }
 
 .pl-item {
   display:flex; align-items:center; gap:8px;
@@ -1433,6 +1439,15 @@ html, body {
 .ctx-danger:hover { background:rgba(192,80,80,.1); color:var(--danger); }
 .ctx-divider { height:1px; background:var(--border2); margin:3px 0; }
 
+/* Three-dot track menu button */
+.t-menu-btn {
+  background:none; border:none; font-size:16px; cursor:pointer;
+  color:var(--text3); padding:3px 7px; border-radius:4px;
+  opacity:0; transition:var(--transition); line-height:1;
+}
+.track-row:hover .t-menu-btn { opacity:1; }
+.t-menu-btn:hover { color:var(--gold2); background:var(--gold-dim); }
+
 /* Responsive */
 @media(max-width:680px) {
   .track-table-head, .track-row {
@@ -1470,7 +1485,7 @@ html, body {
 </div>
 
 <!-- ═══ APP ═══ -->
-<div id="screen-app" class="screen" style="flex-direction:column;">
+<div id="screen-app" class="screen">
 
   <div class="app-body">
     <!-- Sidebar backdrop -->
@@ -1506,27 +1521,31 @@ html, body {
           <span class="nav-icon">⚙</span> Admin
         </div>
       </div>
-      <div class="sidebar-divider">Playlists</div>
-      <div class="sidebar-playlists" id="s-playlists">
-        <div style="color:var(--text-ghost);font-size:12px;padding:6px 12px;font-style:italic;">Loading…</div>
+      <!-- Scrollable middle section: playlists + bingo link -->
+      <div class="sidebar-scroll">
+        <div class="sidebar-divider" style="border-top:none;padding-top:6px;">Playlists</div>
+        <div class="sidebar-playlists" id="s-playlists">
+          <div style="color:var(--text-ghost);font-size:12px;padding:6px 12px;font-style:italic;">Loading…</div>
+        </div>
+        <div style="padding:0 10px 4px;">
+          <button class="btn-new-pl" onclick="openModal('modal-new-pl')">+ New Playlist</button>
+        </div>
+        <!-- ── Bingo Bridge ──────────────────────────────────────────────── -->
+        <div class="sidebar-divider">Bingo Link</div>
+        <div style="padding:0 12px 12px;">
+          <div id="bingo-link-status" style="font-size:11px;color:var(--text-muted);padding:4px 0 8px;font-style:italic;">Not linked</div>
+          <select class="select-input" id="bingo-cat-select" style="font-size:12px;padding:7px 10px;margin-bottom:8px;" onchange="setBingoCategory(this.value)">
+            <option value="">— select bingo category —</option>
+          </select>
+          <button class="btn-new-pl" id="bingo-link-btn" onclick="toggleBingoLink()" style="color:var(--gold);border-color:var(--gold-border);">
+            Activate Link
+          </button>
+          <button class="btn-new-pl" id="bingo-open-btn" onclick="openBingoApp()" style="display:none;color:var(--gold);border-color:var(--gold-border);margin-top:4px;">
+            ♪ Open Bingo App
+          </button>
+        </div>
       </div>
-      <div style="padding:0 10px;">
-        <button class="btn-new-pl" onclick="openModal('modal-new-pl')">+ New Playlist</button>
-      </div>
-      <!-- ── Bingo Bridge ──────────────────────────────────────────────── -->
-      <div class="sidebar-divider">Bingo Link</div>
-      <div style="padding:0 12px 12px;">
-        <div id="bingo-link-status" style="font-size:11px;color:var(--text-muted);padding:4px 0 8px;font-style:italic;">Not linked</div>
-        <select class="select-input" id="bingo-cat-select" style="font-size:12px;padding:7px 10px;margin-bottom:8px;" onchange="setBingoCategory(this.value)">
-          <option value="">— select bingo category —</option>
-        </select>
-        <button class="btn-new-pl" id="bingo-link-btn" onclick="toggleBingoLink()" style="color:var(--gold);border-color:var(--gold-border);">
-          Activate Link
-        </button>
-        <button class="btn-new-pl" id="bingo-open-btn" onclick="openBingoApp()" style="display:none;color:var(--gold);border-color:var(--gold-border);margin-top:4px;">
-          ♪ Open Bingo App
-        </button>
-      </div>
+      <!-- Pinned footer: Jukebox + Sign Out -->
       <div class="sidebar-footer">
         <div class="nav-item" onclick="toggleJukebox()">
           <span class="nav-icon">🖥</span> Jukebox Display
@@ -1661,8 +1680,6 @@ html, body {
           </div>
         </div>
       </div>
-    </div><!-- /main-content -->
-  </div><!-- /app-body -->
 
   <!-- Now Playing Bar -->
   <div class="now-playing-bar">
@@ -1709,6 +1726,9 @@ html, body {
     </div>
   </div>
 
+
+    </div><!-- /main-content -->
+  </div><!-- /app-body -->
 </div><!-- /screen-app -->
 
 <!-- Jukebox is now a popup window — no overlay needed -->
@@ -1793,6 +1813,20 @@ html, body {
       <button class="btn-ghost" onclick="closeModal('modal-cue')">Cancel</button>
       <button class="btn-ghost" onclick="clearCues()" style="color:var(--danger);border-color:var(--danger);">Clear All</button>
       <button class="btn-save" onclick="saveCues()">Save Cues</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Track -->
+<div class="overlay" id="modal-edit-track">
+  <div class="modal">
+    <div class="modal-title">Edit Track Info</div>
+    <div class="field"><label class="field-label">Title</label><input class="field-input" id="et-title" placeholder="Song title"></div>
+    <div class="field"><label class="field-label">Artist</label><input class="field-input" id="et-artist" placeholder="Artist name"></div>
+    <div class="field"><label class="field-label">Album</label><input class="field-input" id="et-album" placeholder="Album name"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal('modal-edit-track')">Cancel</button>
+      <button class="btn-save" onclick="saveTrackEdit()">Save</button>
     </div>
   </div>
 </div>
@@ -2258,17 +2292,24 @@ function applyColWidths() {
 function wireColResize(headId='track-head') {
   const head = document.getElementById(headId);
   if (!head) return;
+  // Map handle DOM index → colWidths index
+  // Header: #(0) | wave | art | title(3) | album(4) | bpm(5) | time(6) | actions
+  // Handles sit on: #, title, album, bpm, time → colWidths[0,3,4,5,6]
+  const colMap = headId === 'lib-head'
+    ? [3, 4, 5, 6]   // lib header has no # resize handle
+    : [0, 3, 4, 5, 6];
   const handles = head.querySelectorAll('.col-resize-handle');
   handles.forEach((handle, i) => {
+    const colIdx = colMap[i] !== undefined ? colMap[i] : i;
     handle.addEventListener('mousedown', e => {
       e.preventDefault();
       e.stopPropagation();
       handle.classList.add('dragging');
       const startX = e.clientX;
-      const startW = colWidths[i];
+      const startW = colWidths[colIdx];
       const onMove = ev => {
         const delta = ev.clientX - startX;
-        colWidths[i] = Math.max(30, startW + delta);
+        colWidths[colIdx] = Math.max(40, startW + delta);
         applyColWidths();
       };
       const onUp = () => {
@@ -2370,7 +2411,7 @@ function renderRow(t, displayIdx, origIdx) {
     '<div class="t-actions">' +
       (S.isAdmin?'<button class="t-btn" onclick="openCueEditor(\''+t.id+'\','+i+')" title="Edit cue points">🎯</button>':'') +
       (S.isAdmin?'<button class="t-btn" onclick="toggleBingo(\''+t.id+'\','+i+')" title="Toggle bingo flag">🎱</button>':'') +
-      '<button class="t-btn" onclick="removeTrack('+i+')" title="Remove from playlist" style="opacity:1;color:var(--text3);">✕</button>' +
+      '<button class="t-menu-btn" onclick="openTrackMenu(event,\''+t.id+'\','+i+',\'playlist\')" title="More options">⋯</button>' +
     '</div>' +
   '</div>';
 }
@@ -2603,7 +2644,13 @@ async function loadFolder() {
 
 async function parseTrack(file, handle) {
   const id = btoa(file.name+file.size).replace(/[^a-zA-Z0-9]/g,'').slice(0,20);
-  const t = { id, filename:file.name, title:file.name.replace(/\.[^.]+$/,''), artist:'Unknown Artist', album:'', duration:0, bpm:null, artUrl:null };
+  // Start with filename-based defaults before ID3
+  const baseName = file.name.replace(/\.[^.]+$/, '');
+  let defaultTitle = baseName, defaultArtist = 'Unknown Artist', defaultAlbum = '';
+  // Try to parse "Artist - Title" or "Title - Artist" from filename
+  const dashMatch = baseName.match(/^(.+?)\s*[-–—]\s*(.+)$/);
+  if (dashMatch) { defaultArtist = dashMatch[1].trim(); defaultTitle = dashMatch[2].trim(); }
+  const t = { id, filename:file.name, title:defaultTitle, artist:defaultArtist, album:defaultAlbum, duration:0, bpm:null, artUrl:null };
   try { const buf=await file.arrayBuffer(); const tags=parseID3(buf); Object.assign(t,tags); } catch(e){}
   try {
     const url=URL.createObjectURL(file);
@@ -2722,9 +2769,7 @@ function renderLibrary() {
         '<div class="t-bpm">'+(t.bpm?Math.round(t.bpm):'—')+'</div>' +
         '<div class="t-dur">'+fmt(t.duration||0)+'</div>' +
         '<div class="t-actions" style="opacity:1;">' +
-          '<button class="t-btn" style="opacity:1;" onclick="playFromLibrary(\''+t.id+'\')" title="Play now">▶</button>' +
-          '<button class="t-btn" style="opacity:1;" onclick="addToCurrentPL(\''+t.id+'\')" title="Add to playlist">＋</button>' +
-          '<button class="t-btn" style="opacity:1;color:var(--text3);" onclick="deleteFromLibrary(\''+t.id+'\')" title="Remove from library">✕</button>' +
+          '<button class="t-menu-btn" style="opacity:1;" onclick="openTrackMenu(event,\''+t.id+'\','+i+',\'library\')" title="More options">⋯</button>' +
         '</div>' +
       '</div>'
     ).join('') + '</div>';
@@ -3388,6 +3433,79 @@ function esc(s){if(!s)return'';return s.replace(/&/g,'&amp;').replace(/</g,'&lt;
 function toast(msg,dur=2500){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+// ── Track three-dot menu ──────────────────────────────────────────────────────
+let _trackMenuCtx = null; // { id, origIdx, source: 'playlist'|'library' }
+
+function openTrackMenu(e, id, origIdx, source) {
+  e.preventDefault(); e.stopPropagation();
+  const old = document.getElementById('track-ctx-menu'); if (old) old.remove();
+  _trackMenuCtx = { id, origIdx, source };
+  const t = S.library.find(x=>x.id===id) || S.currentPL?.tracks?.[origIdx];
+  const menu = document.createElement('div');
+  menu.id = 'track-ctx-menu';
+  menu.style.cssText = 'position:fixed;z-index:9999;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);padding:4px 0;min-width:180px;box-shadow:var(--shadow-deep);';
+  let items = '<div class="ctx-item" onclick="editTrack()">✏️ Edit info</div>';
+  if (source === 'playlist') {
+    items += '<div class="ctx-item" onclick="playAt('+origIdx+');closeTrackMenu()">▶ Play</div>';
+    items += '<div class="ctx-divider"></div>';
+    items += '<div class="ctx-item ctx-danger" onclick="removeTrack('+origIdx+');closeTrackMenu()">✕ Remove from playlist</div>';
+  } else {
+    items += '<div class="ctx-item" onclick="playFromLibrary(\x27'+id+'\x27);closeTrackMenu()">▶ Play</div>';
+    items += '<div class="ctx-item" onclick="addToCurrentPL(\x27'+id+'\x27);closeTrackMenu()">＋ Add to playlist</div>';
+    items += '<div class="ctx-divider"></div>';
+    items += '<div class="ctx-item ctx-danger" onclick="deleteFromLibrary(\x27'+id+'\x27);closeTrackMenu()">✕ Remove from library</div>';
+  }
+  menu.innerHTML = items;
+  menu.style.left = Math.min(e.clientX, window.innerWidth-200)+'px';
+  menu.style.top  = Math.min(e.clientY, window.innerHeight-160)+'px';
+  document.body.appendChild(menu);
+  setTimeout(()=>document.addEventListener('click', closeTrackMenu, {once:true}), 0);
+}
+function closeTrackMenu() { const m=document.getElementById('track-ctx-menu'); if(m) m.remove(); }
+
+let _editTrackId = null;
+function editTrack() {
+  closeTrackMenu();
+  const ctx = _trackMenuCtx; if (!ctx) return;
+  _editTrackId = ctx.id;
+  // Find track in library or playlist
+  let t = S.library.find(x=>x.id===ctx.id);
+  if (!t && S.currentPL?.tracks) t = S.currentPL.tracks.find(x=>x.id===ctx.id);
+  if (!t) return;
+  document.getElementById('et-title').value  = t.title  || '';
+  document.getElementById('et-artist').value = t.artist || '';
+  document.getElementById('et-album').value  = t.album  || '';
+  openModal('modal-edit-track');
+}
+
+function saveTrackEdit() {
+  const title  = document.getElementById('et-title').value.trim();
+  const artist = document.getElementById('et-artist').value.trim();
+  const album  = document.getElementById('et-album').value.trim();
+  if (!title) { toast('Title cannot be empty'); return; }
+  // Update in library
+  const libTrack = S.library.find(t=>t.id===_editTrackId);
+  if (libTrack) { libTrack.title=title; libTrack.artist=artist; libTrack.album=album; }
+  // Update in all playlists
+  S.playlists.forEach(pl => {
+    (pl.tracks||[]).forEach(t => {
+      if (t.id===_editTrackId) { t.title=title; t.artist=artist; t.album=album; }
+    });
+    if ((pl.tracks||[]).some(t=>t.id===_editTrackId)) savePL(pl);
+  });
+  // Update currently playing if needed
+  if (S.track?.id===_editTrackId) {
+    S.track.title=title; S.track.artist=artist; S.track.album=album;
+    document.getElementById('np-title').textContent=title;
+    document.getElementById('np-artist').textContent=artist;
+  }
+  saveLibraryMeta();
+  closeModal('modal-edit-track');
+  renderLibrary();
+  renderTrackList();
+  toast('Track info updated');
+}
 
 // Close modals on backdrop click
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));

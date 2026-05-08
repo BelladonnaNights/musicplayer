@@ -1519,7 +1519,7 @@ html, body {
           <span class="nav-icon">⚙</span> Admin
         </div>
       </div>
-      <!-- Scrollable middle section: playlists + bingo link -->
+      <!-- Scrollable middle section: playlists only -->
       <div class="sidebar-scroll">
         <div class="sidebar-divider" style="border-top:none;padding-top:6px;">Playlists</div>
         <div class="sidebar-playlists" id="s-playlists">
@@ -1528,12 +1528,14 @@ html, body {
         <div style="padding:0 10px 4px;">
           <button class="btn-new-pl" onclick="openModal('modal-new-pl')">+ New Playlist</button>
         </div>
-        <!-- ── Bingo Bridge ──────────────────────────────────────────────── -->
-        <div class="sidebar-divider" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding-right:16px;" onclick="toggleBingoSection()">
+      </div>
+      <!-- Bingo Link — pinned directly above footer, expands upward -->
+      <div style="flex-shrink:0;border-top:1px solid var(--border2);">
+        <div style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:8px 20px 8px 20px;font-family:var(--font-heading);font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--text3);" onclick="toggleBingoSection()">
           <span>Bingo Link</span>
-          <span id="bingo-section-arrow" style="font-size:10px;transition:transform .2s;display:inline-block;color:var(--text3);">▾</span>
+          <span id="bingo-section-arrow" style="font-size:10px;transition:transform .2s;display:inline-block;color:var(--text3);">▴</span>
         </div>
-        <div id="bingo-section-body" style="display:none;padding:0 12px 12px;">
+        <div id="bingo-section-body" style="display:none;padding:0 12px 10px;">
           <div id="bingo-link-status" style="font-size:11px;color:var(--text-muted);padding:4px 0 8px;font-style:italic;">Not linked</div>
           <select class="select-input" id="bingo-cat-select" style="font-size:12px;padding:7px 10px;margin-bottom:8px;" onchange="setBingoCategory(this.value)">
             <option value="">— select bingo category —</option>

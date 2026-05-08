@@ -1761,6 +1761,32 @@ html, body {
   </div>
 </div>
 
+<!-- Edit Playlist -->
+<div class="overlay" id="modal-edit-pl">
+  <div class="modal">
+    <div class="modal-title">Edit Playlist</div>
+    <div class="field">
+      <label class="field-label">Name</label>
+      <input class="field-input" id="epl-name" placeholder="Playlist name">
+    </div>
+    <div class="field">
+      <label class="field-label">Type</label>
+      <select class="select-input" id="epl-type">
+        <option value="general">General / Interim</option>
+        <option value="bingo">Bingo</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="field-label">Per-Playlist Timer <span style="font-size:11px;color:var(--text-muted);font-style:italic;">(seconds, 0 = global default)</span></label>
+      <input class="field-input" id="epl-timer" type="number" min="0" max="600" placeholder="0">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal('modal-edit-pl')">Cancel</button>
+      <button class="btn-save" onclick="savePlaylistEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- New User -->
 <div class="overlay" id="modal-new-user">
   <div class="modal">
@@ -1837,6 +1863,17 @@ html, body {
 <div class="toast" id="toast"></div>
 
 <script>
+// ── Clear bingo URL params immediately on load so refresh never auto-links ──
+(function() {
+  const p = new URLSearchParams(window.location.search);
+  if (p.has('bingo') || p.has('session')) {
+    // Keep params in memory for checkBingoLaunchParam to read,
+    // then replace URL immediately so refresh won't see them
+    window._bingoParams = { bingo: p.get('bingo'), session: p.get('session') };
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+})();
+
 // ═══════════════ PWA MANIFEST ═══════════════
 (function(){
   const manifest = {
@@ -2188,7 +2225,7 @@ function showPLMenu(e, plId) {
   menu.id='pl-ctx-menu';
   menu.style.cssText='position:fixed;z-index:9999;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);padding:4px 0;min-width:160px;box-shadow:var(--shadow-deep);';
   menu.innerHTML=
-    '<div class="ctx-item" onclick="renamePL(\''+plId+'\')">✏️ Rename</div>'+
+    '<div class="ctx-item" onclick="editPlaylist(\''+plId+'\')">✏️ Edit</div>'+
     '<div class="ctx-item" onclick="duplicatePL(\''+plId+'\')">⧉ Duplicate</div>'+
     '<div class="ctx-divider"></div>'+
     '<div class="ctx-item ctx-danger" onclick="deletePL(\''+plId+'\')">✕ Delete</div>';
@@ -2198,6 +2235,40 @@ function showPLMenu(e, plId) {
   setTimeout(()=>document.addEventListener('click',closePLMenu,{once:true}),0);
 }
 function closePLMenu(){ const m=document.getElementById('pl-ctx-menu'); if(m) m.remove(); }
+
+let _editPlId = null;
+function editPlaylist(id) {
+  closePLMenu();
+  const pl = S.playlists.find(p=>p.id===id); if (!pl) return;
+  _editPlId = id;
+  document.getElementById('epl-name').value  = pl.name   || '';
+  document.getElementById('epl-type').value  = pl.type   || 'general';
+  document.getElementById('epl-timer').value = pl.timer  || 0;
+  openModal('modal-edit-pl');
+}
+
+async function savePlaylistEdit() {
+  const pl = S.playlists.find(p=>p.id===_editPlId); if (!pl) return;
+  const name  = document.getElementById('epl-name').value.trim();
+  const type  = document.getElementById('epl-type').value;
+  const timer = parseInt(document.getElementById('epl-timer').value) || 0;
+  if (!name) { toast('Name cannot be empty'); return; }
+  pl.name = name; pl.type = type; pl.timer = timer;
+  savePL(pl);
+  closeModal('modal-edit-pl');
+  renderSidePlaylists();
+  // Update header if this is the open playlist
+  if (S.currentPL?.id === _editPlId) {
+    S.currentPL.name  = name;
+    S.currentPL.type  = type;
+    S.currentPL.timer = timer;
+    document.getElementById('pl-title').textContent = name;
+    document.getElementById('topbar-title').textContent = name;
+    const timerStr = timer ? timer+'s timer' : (S.settings.timer ? S.settings.timer+'s timer' : 'Full songs');
+    document.getElementById('pl-meta').textContent = `${type==='bingo'?'◈ Bingo':'♪ General'} · ${(pl.tracks||[]).length} tracks · ${timerStr}`;
+  }
+  toast('Playlist updated');
+}
 
 function renamePL(id) {
   closePLMenu();
@@ -2315,33 +2386,24 @@ function applyColWidths() {
   });
 }
 
-function wireColResize(headId='track-head') {
+function wireColResize(headId) {
   const head = document.getElementById(headId);
   if (!head) return;
-  // Map handle DOM index → colWidths index
-  // Grid cols: # | wave | art | title | album | bpm | time | actions
-  // Handles on: #(→0), title(→3), album(→4), bpm(→5), time(→6)
-  const colMap = headId === 'lib-head'
-    ? [3, 4, 5, 6]
-    : [0, 3, 4, 5, 6];
-  const handles = head.querySelectorAll('.col-resize-handle');
-  handles.forEach((handle, i) => {
-    const colIdx = colMap[i] !== undefined ? colMap[i] : i;
-    // Use onmousedown directly to avoid capture issues
+  // Each handle has data-col="N" specifying exactly which colWidths index it controls
+  head.querySelectorAll('.col-resize-handle[data-col]').forEach(handle => {
+    const colIdx = parseInt(handle.dataset.col);
     handle.onmousedown = function(e) {
       e.preventDefault();
       e.stopPropagation();
       const startX = e.clientX;
       const startW = colWidths[colIdx];
       handle.classList.add('dragging');
-      // Overlay prevents losing the drag when moving over iframes/text
       const overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;cursor:col-resize;';
       document.body.appendChild(overlay);
       const onMove = ev => {
         ev.preventDefault();
-        const delta = ev.clientX - startX;
-        colWidths[colIdx] = Math.max(40, startW + delta);
+        colWidths[colIdx] = Math.max(40, startW + (ev.clientX - startX));
         applyColWidths();
       };
       const onUp = () => {
@@ -2375,11 +2437,12 @@ function renderTrackList() {
   }
   wrap.innerHTML =
     '<div class="track-table-head" id="track-head">' +
-      '<div class="col-sort '+(S.plSort==="index"?"active":"")+'" onclick="setPlSort(\'index\')">#<div class="col-resize-handle"></div></div><div></div>' +
-      '<div class="col-sort '+(S.plSort==="title"?"active":"")+'" onclick="setPlSort(\'title\')">Title<div class="col-resize-handle"></div></div>' +
-      '<div class="col-sort '+(S.plSort==="album"?"active":"")+'" onclick="setPlSort(\'album\')">Album<div class="col-resize-handle"></div></div>' +
-      '<div class="col-sort '+(S.plSort==="bpm"?"active":"")+'" onclick="setPlSort(\'bpm\')" style="text-align:center">BPM<div class="col-resize-handle"></div></div>' +
-      '<div class="col-sort '+(S.plSort==="duration"?"active":"")+'" onclick="setPlSort(\'duration\')" style="text-align:right">Time<div class="col-resize-handle"></div></div>' +
+      '<div class="col-sort '+(S.plSort==="index"?"active":"")+' " onclick="setPlSort(\"index\")"># <div class="col-resize-handle" data-col="0"></div></div>' +
+      '<div></div>' +
+      '<div class="col-sort '+(S.plSort==="title"?"active":"")+' " onclick="setPlSort(\"title\")">Title <div class="col-resize-handle" data-col="3"></div></div>' +
+      '<div class="col-sort '+(S.plSort==="album"?"active":"")+' " onclick="setPlSort(\"album\")">Album <div class="col-resize-handle" data-col="4"></div></div>' +
+      '<div class="col-sort '+(S.plSort==="bpm"?"active":"")+' " onclick="setPlSort(\"bpm\")" style="text-align:center">BPM <div class="col-resize-handle" data-col="5"></div></div>' +
+      '<div class="col-sort '+(S.plSort==="duration"?"active":"")+' " onclick="setPlSort(\"duration\")" style="text-align:right">Time <div class="col-resize-handle" data-col="6"></div></div>' +
       '<div></div>' +
     '</div>' +
     '<div id="track-rows">' + tracks.map((t,i)=>renderRow(t,i,t._origIdx)).join('') + '</div>';
@@ -2787,11 +2850,13 @@ function renderLibrary() {
   if(!all){el.innerHTML='';return;}
   if(!tracks.length){el.innerHTML='<div class="empty"><div class="empty-icon" style="font-size:28px;">🔍</div><div class="empty-title">No matches</div><div class="empty-desc">Try a different search term.</div></div>';return;}
   el.innerHTML=
-    '<div class="track-table-head" id="lib-head"><div>#</div><div></div>' +
-    '<div class="col-sort '+(S.libSort==="title"?"active":"")+'" onclick="setLibSort(\'title\')">Title<div class="col-resize-handle"></div></div>' +
-    '<div class="col-sort '+(S.libSort==="album"?"active":"")+'" onclick="setLibSort(\'album\')">Album<div class="col-resize-handle"></div></div>' +
-    '<div class="col-sort '+(S.libSort==="bpm"?"active":"")+'" onclick="setLibSort(\'bpm\')" style="text-align:center">BPM<div class="col-resize-handle"></div></div>' +
-    '<div class="col-sort '+(S.libSort==="duration"?"active":"")+'" onclick="setLibSort(\'duration\')" style="text-align:right">Time<div class="col-resize-handle"></div></div>' +
+    '<div class="track-table-head" id="lib-head">' +
+    '<div>#</div>' +
+    '<div></div>' +
+    '<div class="col-sort '+(S.libSort==="title"?"active":"")+' " onclick="setLibSort(\"title\")">Title <div class="col-resize-handle" data-col="3"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="album"?"active":"")+' " onclick="setLibSort(\"album\")">Album <div class="col-resize-handle" data-col="4"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="bpm"?"active":"")+' " onclick="setLibSort(\"bpm\")" style="text-align:center">BPM <div class="col-resize-handle" data-col="5"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="duration"?"active":"")+' " onclick="setLibSort(\"duration\")" style="text-align:right">Time <div class="col-resize-handle" data-col="6"></div></div>' +
     '<div></div></div>' +
     '<div>' + tracks.map((t,i)=>
       '<div class="track-row" ondblclick="playFromLibrary(\''+t.id+'\')">' +
@@ -3782,19 +3847,18 @@ function openBingoApp() {
 }
 
 function checkBingoLaunchParam() {
-  const params = new URLSearchParams(window.location.search);
-  const catId  = params.get('bingo');
-  if (!catId) return;
-  const sessionKey = params.get('session') || catId;
+  // Read from the params we captured at load time (URL already cleared)
+  const bp = window._bingoParams;
+  if (!bp || !bp.bingo) return;
+  const catId = bp.bingo;
+  const sessionKey = bp.session || catId;
+  window._bingoParams = null; // consume once — never auto-links again
   S.bingoCategoryId  = catId;
   S.bingoSessionKey  = sessionKey;
   S.bingoLinked = true;
   initBingoDb();
   updateBingoLinkUI();
   toast('◈ Bingo linked!', 3000);
-  // Clear the URL params so a page refresh does NOT re-link automatically
-  const clean = window.location.pathname;
-  window.history.replaceState({}, '', clean);
 }
 
 document.addEventListener('keydown', e => {

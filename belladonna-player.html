@@ -274,7 +274,7 @@ html, body {
 /* Track table */
 .track-table-head {
   display:grid;
-  grid-template-columns:32px 32px 44px 1fr 1fr 60px 60px 80px;
+  grid-template-columns: 36px 44px 240px 160px 60px 60px 80px;
   gap:0 8px; padding:0 8px 6px;
   border-bottom:1px solid var(--border2);
   font-family:var(--font-heading); font-size:9px; letter-spacing:.1em;
@@ -282,7 +282,7 @@ html, body {
 }
 .track-row {
   display:grid;
-  grid-template-columns:32px 32px 44px 1fr 1fr 60px 60px 80px;
+  grid-template-columns: 36px 44px 240px 160px 60px 60px 80px;
   gap:0 8px; padding:5px 8px;
   border-radius:var(--radius); align-items:center;
   cursor:pointer; transition:var(--transition);
@@ -580,7 +580,7 @@ html, body {
 /* Resizable columns — widths applied directly via JS inline style */
 .track-table-head, .track-row {
   display:grid;
-  grid-template-columns: 32px 32px 44px 1fr 1fr 60px 60px 80px;
+  grid-template-columns: 36px 44px 240px 160px 60px 60px 80px;
   gap:0 8px; align-items:center;
 }
 .col-resize-handle {
@@ -710,6 +710,9 @@ html, body {
   border:1px dashed var(--border2); background:transparent; width:100%; margin:6px 0;
 }
 .btn-new-pl:hover { color:var(--gold); border-color:var(--gold-border); }
+
+.sidebar-bingo-pin { flex-shrink:0; border-top:1px solid var(--border); }
+.sidebar-bingo-pin .sidebar-divider { border-top:none; margin-top:0; }
 
 .sidebar-footer {
   padding:10px 10px; border-top:1px solid var(--border); flex-shrink:0;
@@ -1560,6 +1563,14 @@ html, body {
       <div class="topbar">
         <div class="topbar-title" id="topbar-title">Belladonna Audio Alchemies</div>
         <div class="topbar-actions">
+          <!-- Column visibility toggles -->
+          <div id="col-vis-bar" style="display:none;align-items:center;gap:4px;">
+            <button class="btn-sm col-vis-btn active" data-col="1" onclick="toggleCol(1)" title="Album Art">🎨</button>
+            <button class="btn-sm col-vis-btn active" data-col="2" onclick="toggleCol(2)" title="Title">Title</button>
+            <button class="btn-sm col-vis-btn active" data-col="3" onclick="toggleCol(3)" title="Album">Album</button>
+            <button class="btn-sm col-vis-btn active" data-col="4" onclick="toggleCol(4)" title="BPM">BPM</button>
+            <button class="btn-sm col-vis-btn active" data-col="5" onclick="toggleCol(5)" title="Time">Time</button>
+          </div>
           <!-- Free Play toggle lives here when playing -->
           <button class="btn-sm" id="btn-freeplay" onclick="toggleFreePlay()" style="display:none;" title="Disable auto-advance timer">
             ∞ Free Play
@@ -2142,6 +2153,8 @@ function showView(v) {
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
   document.getElementById('view-'+v).classList.add('active');
   document.getElementById('nav-'+v)?.classList.add('active');
+  const cvb = document.getElementById('col-vis-bar');
+  if (cvb) cvb.style.display = (v==='player'||v==='library') ? 'flex' : 'none';
 }
 
 // ═══════════════ PLAYLISTS ═══════════════
@@ -2376,13 +2389,35 @@ function updatePlSortBtns() {
 // ── Column resize ─────────────────────────────────────────────────────────────
 // col widths stored as an array matching the 8-column grid
 // [#, wave, art, title, album, bpm, dur, actions]
-let colWidths = [32, 32, 44, 220, 180, 60, 60, 80];
+let colWidths = [36, 44, 240, 160, 60, 60, 80];
+// Column visibility: [#, art, title, album, bpm, time, actions]
+let colVisible = [true, true, true, true, true, true, true];
 
 function applyColWidths() {
-  const cols = `${colWidths[0]}px ${colWidths[1]}px ${colWidths[2]}px ${colWidths[3]}px ${colWidths[4]}px ${colWidths[5]}px ${colWidths[6]}px ${colWidths[7]}px`;
-  // Apply directly as inline style to every head and row — CSS vars are unreliable here
+  // 7-col grid: # | art | title | album | bpm | time | actions
+  const w = colWidths.map((w,i) => colVisible[i] ? w+'px' : '0px');
+  const cols = w.join(' ');
   document.querySelectorAll('.track-table-head, .track-row').forEach(el => {
     el.style.gridTemplateColumns = cols;
+  });
+  // Hide cells in hidden columns
+  document.querySelectorAll('.track-table-head > div, .track-row > div').forEach((cell, i) => {
+    const colIdx = i % 7;
+    cell.style.overflow = colVisible[colIdx] ? '' : 'hidden';
+    cell.style.padding  = colVisible[colIdx] ? '' : '0';
+    cell.style.minWidth = colVisible[colIdx] ? '' : '0';
+  });
+}
+
+function toggleCol(i) {
+  colVisible[i] = !colVisible[i];
+  // Always keep # and actions visible
+  colVisible[0] = true; colVisible[6] = true;
+  applyColWidths();
+  // Update button state
+  document.querySelectorAll('.col-vis-btn').forEach(btn => {
+    const idx = parseInt(btn.dataset.col);
+    btn.classList.toggle('active', colVisible[idx]);
   });
 }
 
@@ -2437,13 +2472,13 @@ function renderTrackList() {
   }
   wrap.innerHTML =
     '<div class="track-table-head" id="track-head">' +
-      '<div class="col-sort '+(S.plSort==="index"?"active":"")+' " onclick="setPlSort(\"index\")"># <div class="col-resize-handle" data-col="0"></div></div>' +
-      '<div></div>' +
-      '<div class="col-sort '+(S.plSort==="title"?"active":"")+' " onclick="setPlSort(\"title\")">Title <div class="col-resize-handle" data-col="3"></div></div>' +
-      '<div class="col-sort '+(S.plSort==="album"?"active":"")+' " onclick="setPlSort(\"album\")">Album <div class="col-resize-handle" data-col="4"></div></div>' +
-      '<div class="col-sort '+(S.plSort==="bpm"?"active":"")+' " onclick="setPlSort(\"bpm\")" style="text-align:center">BPM <div class="col-resize-handle" data-col="5"></div></div>' +
-      '<div class="col-sort '+(S.plSort==="duration"?"active":"")+' " onclick="setPlSort(\"duration\")" style="text-align:right">Time <div class="col-resize-handle" data-col="6"></div></div>' +
-      '<div></div>' +
+    '<div>#</div>' +
+    '<div></div>' +
+    '<div class="col-sort '+(S.plSort==="title"?"active":"")+'" onclick="setPlSort(\x27title\x27)">Title<div class="col-resize-handle" data-col="2"></div></div>' +
+    '<div class="col-sort '+(S.plSort==="album"?"active":"")+'" onclick="setPlSort(\x27album\x27)">Album<div class="col-resize-handle" data-col="3"></div></div>' +
+    '<div class="col-sort '+(S.plSort==="bpm"?"active":"")+'" onclick="setPlSort(\x27bpm\x27)">BPM<div class="col-resize-handle" data-col="4"></div></div>' +
+    '<div class="col-sort '+(S.plSort==="duration"?"active":"")+'" onclick="setPlSort(\x27duration\x27)">Time<div class="col-resize-handle" data-col="5"></div></div>' +
+    '<div></div>' +
     '</div>' +
     '<div id="track-rows">' + tracks.map((t,i)=>renderRow(t,i,t._origIdx)).join('') + '</div>';
 
@@ -2493,8 +2528,7 @@ function renderRow(t, displayIdx, origIdx) {
 
   return '<div class="track-row'+(playing?' playing':'')+'" id="tr-'+i+'" ' +
     'draggable="true" data-orig-idx="'+i+'" ondblclick="playAt('+i+')">' +
-    '<div class="t-num" style="cursor:grab;opacity:0.4;font-size:16px;">⠿</div>' +
-    '<div class="t-wave"><div class="waveform">'+'<div class="wb"></div>'.repeat(5)+'</div></div>' +
+    '<div class="t-num">'+(playing?'<div class="waveform">'+'<div class="wb"></div>'.repeat(5)+'</div>':'<span style="cursor:grab;opacity:0.4">⠿</span>')+'</div>' +
     '<div class="t-art">'+(t.artUrl?'<img src="'+t.artUrl+'" loading="lazy">':'<div class="t-art-ph">♪</div>')+'</div>' +
     '<div class="t-info">' +
       '<div class="t-title">'+esc(t.title||t.filename||'Unknown')+'</div>' +
@@ -2853,14 +2887,14 @@ function renderLibrary() {
     '<div class="track-table-head" id="lib-head">' +
     '<div>#</div>' +
     '<div></div>' +
-    '<div class="col-sort '+(S.libSort==="title"?"active":"")+' " onclick="setLibSort(\"title\")">Title <div class="col-resize-handle" data-col="3"></div></div>' +
-    '<div class="col-sort '+(S.libSort==="album"?"active":"")+' " onclick="setLibSort(\"album\")">Album <div class="col-resize-handle" data-col="4"></div></div>' +
-    '<div class="col-sort '+(S.libSort==="bpm"?"active":"")+' " onclick="setLibSort(\"bpm\")" style="text-align:center">BPM <div class="col-resize-handle" data-col="5"></div></div>' +
-    '<div class="col-sort '+(S.libSort==="duration"?"active":"")+' " onclick="setLibSort(\"duration\")" style="text-align:right">Time <div class="col-resize-handle" data-col="6"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="title"?"active":"")+'" onclick="setLibSort(\x27title\x27)">Title<div class="col-resize-handle" data-col="2"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="album"?"active":"")+'" onclick="setLibSort(\x27album\x27)">Album<div class="col-resize-handle" data-col="3"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="bpm"?"active":"")+'" onclick="setLibSort(\x27bpm\x27)">BPM<div class="col-resize-handle" data-col="4"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="duration"?"active":"")+'" onclick="setLibSort(\x27duration\x27)">Time<div class="col-resize-handle" data-col="5"></div></div>' +
     '<div></div></div>' +
     '<div>' + tracks.map((t,i)=>
       '<div class="track-row" ondblclick="playFromLibrary(\''+t.id+'\')">' +
-        '<div class="t-num">'+(i+1)+'</div><div></div>' +
+        '<div class="t-num">'+(i+1)+'</div>' +
         '<div class="t-art">'+(t.artUrl?'<img src="'+t.artUrl+'" loading="lazy">':'<div class="t-art-ph">♪</div>')+'</div>' +
         '<div class="t-info"><div class="t-title">'+esc(t.title)+'</div><div class="t-artist">'+esc(t.artist)+'</div></div>' +
         '<div class="t-album">'+esc(t.album||'—')+'</div>' +
@@ -3746,8 +3780,9 @@ function toggleBingoSection() {
   const body  = document.getElementById('bingo-section-body');
   const arrow = document.getElementById('bingo-section-arrow');
   const open  = body.style.display !== 'none';
-  body.style.display  = open ? 'none' : '';
-  arrow.style.transform = open ? '' : 'rotate(180deg)';
+  body.style.display = open ? 'none' : '';
+  // ▴ = closed (click to expand up), ▾ = open
+  arrow.textContent = open ? '▴' : '▾';
 }
 
 function initBingoDb() {

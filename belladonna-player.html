@@ -2924,49 +2924,208 @@ async function requestFolderPermission() {
   } catch(e) { toast('Could not reconnect — try loading folder manually'); }
 }
 
-async function scanDirRecursive(dirHandle, tracks, existingIds, depth) {
-  if (depth > 8) return; // safety cap, Artist/Album/Song is only 3 levels deep
+// ══════════════════════════════════════════════════════
+// FAST LIBRARY LOADING — three-phase pipeline
+// Phase 1: instant filename-only scan (no parsing, no network)
+// Phase 2: background metadata enrichment (ID3 + duration) in small batches
+// Phase 3: background album art fetch, throttled in parallel bursts
+// All enriched metadata is cached in Firebase by file fingerprint (name+size)
+// so repeat sessions skip phases 2 and 3 entirely for known files.
+// ══════════════════════════════════════════════════════
+
+function fileFingerprint(name, size) {
+  return btoa(name + size).replace(/[^a-zA-Z0-9]/g,'').slice(0,24);
+}
+
+// In-memory cache of Firebase-stored metadata, loaded once per session
+let metaCache = {};
+let metaCacheLoaded = false;
+
+async function loadMetaCache() {
+  if (metaCacheLoaded) return;
+  metaCacheLoaded = true;
+  if (!db) return;
+  try {
+    const snap = await db.collection('library_meta').get();
+    snap.forEach(doc => { metaCache[doc.id] = doc.data(); });
+  } catch(e) { console.warn('Could not load metadata cache:', e); }
+}
+
+// Batched Firebase writes — collect then flush, instead of one write per song
+let metaWriteQueue = {};
+let metaWriteTimer = null;
+function queueMetaSave(id, data) {
+  metaCache[id] = data; // update local cache immediately
+  if (!db) return;
+  metaWriteQueue[id] = data;
+  clearTimeout(metaWriteTimer);
+  metaWriteTimer = setTimeout(flushMetaWrites, 1500);
+}
+async function flushMetaWrites() {
+  const batch = db.batch();
+  const ids = Object.keys(metaWriteQueue);
+  if (!ids.length) return;
+  ids.forEach(id => {
+    batch.set(db.collection('library_meta').doc(id), metaWriteQueue[id]);
+  });
+  metaWriteQueue = {};
+  try { await batch.commit(); } catch(e) { console.warn('Metadata batch write failed:', e); }
+}
+
+// ── Phase 1: instant scan — filenames + sizes only, no file reads ──
+async function scanDirFast(dirHandle, results, depth) {
+  if (depth > 8) return;
   for await (const [name, handle] of dirHandle.entries()) {
-    if (name.startsWith('.')) continue; // skip hidden files/folders
+    if (name.startsWith('.')) continue;
     if (handle.kind === 'directory') {
-      await scanDirRecursive(handle, tracks, existingIds, depth + 1);
+      await scanDirFast(handle, results, depth + 1);
     } else if (handle.kind === 'file' && /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(name)) {
-      try {
-        const file = await handle.getFile();
-        const id = btoa(file.name + file.size).replace(/[^a-zA-Z0-9]/g,'').slice(0,20);
-        S.fileHandles[id] = handle;
-        if (!existingIds.has(id)) {
-          const t = await parseTrack(file, handle);
-          tracks.push(t);
-          // Live progress so it never looks frozen on big libraries
-          if (tracks.length % 10 === 0) {
-            const el = document.getElementById('lib-count');
-            if (el) el.textContent = 'Scanning… ' + tracks.length + ' tracks found';
-          }
-        }
-      } catch(e) { /* skip unreadable files */ }
+      results.push({ name, handle });
     }
   }
 }
 
+function trackFromFilenameOnly(name, size, id) {
+  const baseName = name.replace(/\.[^.]+$/, '');
+  let title = baseName, artist = 'Unknown Artist', album = '';
+  const dashMatch = baseName.match(/^(.+?)\s*[-–—]\s*(.+)$/);
+  if (dashMatch) { artist = dashMatch[1].trim(); title = dashMatch[2].trim(); }
+  return { id, filename:name, title, artist, album, duration:0, bpm:null, artUrl:null, _needsEnrich:true };
+}
+
 async function mountFolder(dirHandle) {
-  // Recursively scan Artist/Album/Song subfolders and restore file handles
-  const tracks = [];
-  const existingIds = new Set(S.library.map(t => t.id));
   const el = document.getElementById('lib-count');
   if (el) el.textContent = 'Scanning folder…';
-  await scanDirRecursive(dirHandle, tracks, existingIds, 0);
-  if (tracks.length) {
-    S.library = [...S.library, ...tracks];
-    saveLibraryMeta();
+
+  await loadMetaCache();
+
+  // Phase 1 — instant file discovery, no parsing
+  const found = [];
+  await scanDirFast(dirHandle, found, 0);
+
+  const existingIds = new Set(S.library.map(t => t.id));
+  const newTracks = [];
+  const enrichQueue = [];
+
+  for (const { name, handle } of found) {
+    let size;
+    try { size = (await handle.getFile()).size; } catch(e) { continue; }
+    const id = fileFingerprint(name, size);
+    S.fileHandles[id] = handle;
+    if (existingIds.has(id)) continue;
+
+    const cached = metaCache[id];
+    if (cached) {
+      // Known file — use cached metadata, skip slow parsing entirely
+      newTracks.push({ id, filename:name, ...cached, _needsEnrich:false });
+    } else {
+      // Unknown file — show it immediately with filename-based guess, enrich later
+      const guess = trackFromFilenameOnly(name, size, id);
+      newTracks.push(guess);
+      enrichQueue.push(id);
+    }
   }
+
+  S.library = [...S.library, ...newTracks];
+  saveLibraryMeta();
+  renderLibrary();
+
   const count = Object.keys(S.fileHandles).length;
   if (count === 0) {
     toast('No audio files found — check the folder contains .mp3/.wav/.flac/.m4a files');
-  } else {
-    toast(count + ' tracks ready to play');
+    return;
   }
+  toast(count + ' tracks loaded' + (enrichQueue.length ? ' — refining ' + enrichQueue.length + ' new ones…' : ''));
+
+  if (enrichQueue.length) enrichTracksInBackground(enrichQueue);
+}
+
+// ── Phase 2: background enrichment — ID3 tags + duration, small batches ──
+let enrichRunning = false;
+async function enrichTracksInBackground(ids) {
+  if (enrichRunning) { S._pendingEnrich = (S._pendingEnrich||[]).concat(ids); return; }
+  enrichRunning = true;
+  const BATCH = 6;
+  let done = 0;
+  const artQueue = [];
+
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const batchIds = ids.slice(i, i + BATCH);
+    await Promise.all(batchIds.map(async id => {
+      const track = S.library.find(t => t.id === id);
+      const handle = S.fileHandles[id];
+      if (!track || !handle) return;
+      try {
+        const file = handle._safariFile ? handle._safariFile : await handle.getFile();
+        const enriched = await enrichTrackMetadata(file, track);
+        Object.assign(track, enriched, { _needsEnrich:false });
+        queueMetaSave(id, {
+          title:track.title, artist:track.artist, album:track.album,
+          duration:track.duration, bpm:track.bpm, artUrl:track.artUrl
+        });
+        artQueue.push(id);
+      } catch(e) { /* skip unreadable */ }
+    }));
+    done += batchIds.length;
+    const el = document.getElementById('lib-count');
+    if (el) el.textContent = S.library.length + ' tracks · refining ' + done + '/' + ids.length + '…';
+    renderLibrary();
+    await new Promise(r => setTimeout(r, 30)); // yield to keep UI responsive
+  }
+
+  flushMetaWrites();
   renderLibrary();
+  toast('Library refined ✓');
+
+  if (artQueue.length) fetchArtInBackground(artQueue);
+
+  enrichRunning = false;
+  if (S._pendingEnrich?.length) {
+    const next = S._pendingEnrich; S._pendingEnrich = [];
+    enrichTracksInBackground(next);
+  }
+}
+
+async function enrichTrackMetadata(file, existingTrack) {
+  const t = { title:existingTrack.title, artist:existingTrack.artist, album:existingTrack.album, duration:0, bpm:null };
+  try { const buf=await file.arrayBuffer(); const tags=parseID3(buf); Object.assign(t,tags); } catch(e){}
+  try {
+    const url=URL.createObjectURL(file);
+    const a=new Audio();
+    await new Promise(res=>{a.src=url;a.onloadedmetadata=()=>{t.duration=a.duration;res();};a.onerror=res;});
+    URL.revokeObjectURL(url);
+  } catch(e){}
+  return t;
+}
+
+// ── Phase 3: background art fetch — small parallel bursts, not sequential ──
+let artFetchRunning = false;
+async function fetchArtInBackground(ids) {
+  if (artFetchRunning) { S._pendingArt = (S._pendingArt||[]).concat(ids); return; }
+  artFetchRunning = true;
+  const BURST = 4;
+  for (let i = 0; i < ids.length; i += BURST) {
+    const burst = ids.slice(i, i + BURST);
+    await Promise.all(burst.map(async id => {
+      const track = S.library.find(t => t.id === id);
+      if (!track || track.artUrl) return;
+      const art = await fetchArt(track.artist, track.title, track.album);
+      if (art) {
+        track.artUrl = art;
+        queueMetaSave(id, {
+          title:track.title, artist:track.artist, album:track.album,
+          duration:track.duration, bpm:track.bpm, artUrl:art
+        });
+      }
+    }));
+    renderLibrary();
+  }
+  flushMetaWrites();
+  artFetchRunning = false;
+  if (S._pendingArt?.length) {
+    const next = S._pendingArt; S._pendingArt = [];
+    fetchArtInBackground(next);
+  }
 }
 
 function saveLibraryMeta() {
@@ -3009,39 +3168,29 @@ async function loadFolder() {
     input.onchange = async function() {
       const files = Array.from(input.files).filter(f => /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(f.name));
       if (!files.length) { toast('No audio files found'); return; }
-      toast('Loading ' + files.length + ' tracks…');
+      await loadMetaCache();
       S.library = []; S.fileHandles = {};
+      const newTracks = [];
+      const enrichQueue = [];
       for (const file of files) {
-        const t = await parseTrack(file, null);
-        S.fileHandles[t.id] = { _safariFile: file };
-        S.library.push(t);
+        const id = fileFingerprint(file.name, file.size);
+        S.fileHandles[id] = { _safariFile: file };
+        const cached = metaCache[id];
+        if (cached) {
+          newTracks.push({ id, filename:file.name, ...cached, _needsEnrich:false });
+        } else {
+          newTracks.push(trackFromFilenameOnly(file.name, file.size, id));
+          enrichQueue.push(id);
+        }
       }
+      S.library = newTracks;
       saveLibraryMeta();
       renderLibrary();
-      toast('Loaded ' + S.library.length + ' tracks');
+      toast('Loaded ' + S.library.length + ' tracks' + (enrichQueue.length ? ' — refining ' + enrichQueue.length + '…' : ''));
+      if (enrichQueue.length) enrichTracksInBackground(enrichQueue);
     };
     input.click();
   }
-}
-
-async function parseTrack(file, handle) {
-  const id = btoa(file.name+file.size).replace(/[^a-zA-Z0-9]/g,'').slice(0,20);
-  // Start with filename-based defaults before ID3
-  const baseName = file.name.replace(/\.[^.]+$/, '');
-  let defaultTitle = baseName, defaultArtist = 'Unknown Artist', defaultAlbum = '';
-  // Try to parse "Artist - Title" or "Title - Artist" from filename
-  const dashMatch = baseName.match(/^(.+?)\s*[-–—]\s*(.+)$/);
-  if (dashMatch) { defaultArtist = dashMatch[1].trim(); defaultTitle = dashMatch[2].trim(); }
-  const t = { id, filename:file.name, title:defaultTitle, artist:defaultArtist, album:defaultAlbum, duration:0, bpm:null, artUrl:null };
-  try { const buf=await file.arrayBuffer(); const tags=parseID3(buf); Object.assign(t,tags); } catch(e){}
-  try {
-    const url=URL.createObjectURL(file);
-    const a=new Audio();
-    await new Promise(res=>{a.src=url;a.onloadedmetadata=()=>{t.duration=a.duration;res();};a.onerror=res;});
-    URL.revokeObjectURL(url);
-  } catch(e){}
-  t.artUrl = await fetchArt(t.artist, t.title, t.album);
-  return t;
 }
 
 function parseID3(buf) {

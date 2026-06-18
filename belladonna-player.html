@@ -759,9 +759,9 @@ html, body {
   font-size:17px; letter-spacing:.18em; line-height:1.1; margin-top:2px;
 }
 .brand-word-player {
-  color:var(--text3);
-  font-size:10px; letter-spacing:.22em; line-height:1; margin-top:1px;
-  font-family:var(--font-heading);
+  color:var(--gold);
+  font-size:17px; letter-spacing:.18em; line-height:1.1; margin-top:0;
+  font-family:var(--font-display);
 }
 .brand-divider { display:none; }
 .brand-subtitle { display:none; }
@@ -1777,7 +1777,7 @@ html, body {
             <div class="col-add-menu" id="fade-mode-menu" style="min-width:180px;right:0;left:auto;"></div>
           </div>
           <button class="btn-sm" onclick="loadFolder()" title="Choose music folder">📂</button>
-          <button class="btn-sm" id="btn-quick-folder" onclick="quickLoadFolder()" title="Reload saved folder in one click" style="display:none;">⚡📂</button>
+          <button class="btn-sm" id="btn-quick-folder" onclick="quickLoadFolder()" title="Reload last folder in one click" style="opacity:0.4;cursor:not-allowed;" disabled>⚡📂</button>
         </div>
       </div>
 
@@ -1788,6 +1788,7 @@ html, body {
             <div>
               <div class="pl-title" id="pl-title">Select a Playlist</div>
               <div class="pl-meta" id="pl-meta">Choose a playlist from the sidebar</div>
+              <div id="bulk-missing-badge" style="display:none;margin-top:4px;font-size:11px;color:#e06060;font-family:var(--font-heading);letter-spacing:.04em;cursor:pointer;" onclick="openBulkAdd()" title="Click to review missing songs">✗ <span id="bulk-missing-text"></span> — click to review</div>
             </div>
             <div class="pl-controls" id="pl-controls" style="display:none;">
               <button class="btn-sm" id="btn-shuffle" onclick="toggleShuffle()">⇄ Shuffle</button>
@@ -2528,6 +2529,8 @@ async function loadPlaylists() {
   renderSidePlaylists();
 }
 
+const _sectionCollapsed = {};  // key = section.scope, value = bool
+
 const PL_SECTIONS = [
   { scope:'admin-bingo',      label:'Bingo',               icon:'◈', dragGroup:'admin-bingo' },
   { scope:'admin-belladonna', label:'Belladonna Playlists', icon:'♪', dragGroup:'admin-belladonna' },
@@ -2561,17 +2564,21 @@ function renderSidePlaylists() {
   let html = '';
   PL_SECTIONS.forEach(section => {
     const items = S.playlists.filter(p => p.scope === section.scope);
-    html += '<div class="sidebar-divider" style="border-top:none;margin-top:2px;padding:8px 16px 4px;display:flex;align-items:center;gap:6px;">'+
-      '<span>'+section.icon+'</span><span>'+section.label+'</span>'+
-      (items.length ? '<span style="font-size:10px;color:var(--text3);margin-left:auto;">'+items.length+'</span>' : '') +
+    const collapsed = _sectionCollapsed[section.scope] || false;
+    const arrow = collapsed ? '▸' : '▾';
+    html += '<div class="sidebar-divider" style="border-top:none;margin-top:2px;padding:8px 16px 4px;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" onclick="toggleSectionCollapse(\x27'+section.scope+'\x27)">'+
+      '<span>'+section.icon+'</span><span style="flex:1;">'+section.label+'</span>'+
+      '<span style="font-size:10px;color:var(--text3);">'+arrow+'</span>'+
     '</div>';
-    if (!items.length) {
-      html += '<div style="color:var(--text-ghost);font-size:11px;padding:2px 16px 8px;font-style:italic;">'+
-        (section.scope==='personal' ? 'Create your first playlist below' :
-         section.scope==='shared' ? 'Nothing shared yet' :
-         'None set up yet') + '</div>';
-    } else {
-      html += items.map((p,i)=>renderPLItem(p,i)).join('');
+    if (!collapsed) {
+      if (!items.length) {
+        html += '<div style="color:var(--text-ghost);font-size:11px;padding:2px 16px 8px;font-style:italic;">'+
+          (section.scope==='personal' ? 'Create your first playlist below' :
+           section.scope==='shared' ? 'Nothing shared yet' :
+           'None set up yet') + '</div>';
+      } else {
+        html += items.map((p,i)=>renderPLItem(p,i)).join('');
+      }
     }
   });
   el.innerHTML = html;
@@ -2599,6 +2606,11 @@ function renderSidePlaylists() {
       dragIdx=null; savePlOrder(); renderSidePlaylists();
     });
   });
+}
+
+function toggleSectionCollapse(scope) {
+  _sectionCollapsed[scope] = !_sectionCollapsed[scope];
+  renderSidePlaylists();
 }
 
 async function savePlOrder() {
@@ -2749,6 +2761,7 @@ async function selectPL(id) {
   const timerStr = pl.timer ? `${pl.timer}s timer` : (S.settings.timer ? `${S.settings.timer}s timer` : 'Full songs');
   document.getElementById('pl-meta').textContent = `${pl.type==='bingo'?'🎱 Bingo':'♪ General'} · ${(pl.tracks||[]).length} tracks · ${timerStr}`;
   document.getElementById('pl-controls').style.display='flex';
+  updateBulkMissingBadge();
   document.getElementById('topbar-title').textContent = pl.name;
 
   document.getElementById('btn-shuffle').classList.toggle('active', S.shuffle);
@@ -3222,7 +3235,7 @@ async function tryRestoreFolder() {
   const handle = await loadDirectoryHandle();
   if (!handle) return;
   // Show quick-load button since we have a saved handle
-  const qb = document.getElementById('btn-quick-folder'); if (qb) qb.style.display = '';
+  const qb = document.getElementById('btn-quick-folder'); if (qb) { qb.style.opacity='1'; qb.style.cursor='pointer'; qb.disabled=false; }
   // Check if we already have permission, or can get it without a gesture
   try {
     const perm = await handle.queryPermission({ mode: 'read' });
@@ -3515,7 +3528,7 @@ async function loadFolder() {
     try {
       const dir = await window.showDirectoryPicker({ mode: 'read' });
       await saveDirectoryHandle(dir);   // persist for next session
-      const qb = document.getElementById('btn-quick-folder'); if (qb) qb.style.display = '';
+      const qb = document.getElementById('btn-quick-folder'); if (qb) { qb.style.opacity='1'; qb.style.cursor='pointer'; qb.disabled=false; }
       S.library = [];                   // reset — fresh load
       S.fileHandles = {};
       await mountFolder(dir);
@@ -4719,13 +4732,27 @@ function soloPlFilter(key) {
 
 // ── BULK ADD ──────────────────────────────────────────────────────────────────
 let _bulkMatches = []; // { line, title, artist, track|null, status }
+const _bulkStateByPL = {}; // plId -> { rawText, matches }
 
 function openBulkAdd() {
   if (!S.currentPL) { toast('Select a playlist first'); return; }
-  document.getElementById('bulk-input').value = '';
-  document.getElementById('bulk-results').innerHTML = '';
-  document.getElementById('bulk-add-btn').style.display = 'none';
-  _bulkMatches = [];
+  const saved = _bulkStateByPL[S.currentPL.id];
+  if (saved) {
+    // Restore saved state for this playlist — re-run match so status reflects current library/playlist
+    document.getElementById('bulk-input').value = saved.rawText;
+    _bulkMatches = saved.matches;
+    // Re-check which are now in the playlist
+    const inPL = new Set((S.currentPL.tracks||[]).map(t=>t.id));
+    _bulkMatches.forEach(m => {
+      if (m.track) m.status = inPL.has(m.track.id) ? 'already-in' : 'matched';
+    });
+    renderBulkResults();
+  } else {
+    document.getElementById('bulk-input').value = '';
+    document.getElementById('bulk-results').innerHTML = '';
+    document.getElementById('bulk-add-btn').style.display = 'none';
+    _bulkMatches = [];
+  }
   openModal('modal-bulk-add');
 }
 
@@ -4771,6 +4798,14 @@ function runBulkMatch() {
     return { line, title, artist, track, status };
   });
 
+  // Persist state for this playlist
+  if (S.currentPL) {
+    _bulkStateByPL[S.currentPL.id] = {
+      rawText: document.getElementById('bulk-input').value,
+      matches: _bulkMatches
+    };
+    updateBulkMissingBadge();
+  }
   renderBulkResults();
 }
 
@@ -4831,6 +4866,25 @@ function confirmBulkAdd() {
   renderBulkResults();
   document.getElementById('bulk-add-btn').style.display = 'none';
   toast(`Added ${added} song${added!==1?'s':''} to ${S.currentPL.name}`);
+  if (S.currentPL) {
+    _bulkStateByPL[S.currentPL.id] = { rawText: document.getElementById('bulk-input').value, matches: _bulkMatches };
+    updateBulkMissingBadge();
+  }
+}
+
+function updateBulkMissingBadge() {
+  const badge = document.getElementById('bulk-missing-badge');
+  if (!badge || !S.currentPL) return;
+  const state = _bulkStateByPL[S.currentPL.id];
+  if (!state || !state.matches.length) { badge.style.display = 'none'; return; }
+  const missing = state.matches.filter(m => m.status === 'not-found').length;
+  if (missing > 0) {
+    const txt = document.getElementById('bulk-missing-text');
+    if (txt) txt.textContent = missing + ' song' + (missing!==1?'s':'') + ' missing from library';
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
 }
 
 function openModal(id){document.getElementById(id).classList.add('open');}

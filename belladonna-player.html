@@ -274,7 +274,7 @@ html, body {
 /* Track table */
 .track-table-head {
   display:grid;
-  grid-template-columns: 36px 44px 240px 160px 60px 60px 80px;
+  grid-template-columns: 36px 44px 200px 140px 140px 60px 56px 80px;
   gap:0 8px; padding:0 8px 6px;
   border-bottom:1px solid var(--border2);
   font-family:var(--font-heading); font-size:9px; letter-spacing:.1em;
@@ -282,7 +282,7 @@ html, body {
 }
 .track-row {
   display:grid;
-  grid-template-columns: 36px 44px 240px 160px 60px 60px 80px;
+  grid-template-columns: 36px 44px 200px 140px 140px 60px 56px 80px;
   gap:0 8px; padding:5px 8px;
   border-radius:var(--radius); align-items:center;
   cursor:pointer; transition:var(--transition);
@@ -310,9 +310,13 @@ html, body {
 .t-art-ph { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:16px; opacity:0.2; }
 
 .t-info { min-width:0; }
+.t-title-cell { font-family:var(--font-heading); font-size:12px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:.03em; align-self:center; }
+.t-artist-cell { font-size:12px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:var(--serif); font-style:italic; align-self:center; }
+.t-album { font-size:12px; color:var(--text3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; align-self:center; }
+/* Keep legacy t-info for any remaining uses */
+.t-info { display:flex; flex-direction:column; overflow:hidden; }
 .t-title { font-family:var(--font-heading); font-size:12px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:.03em; }
 .t-artist { font-size:12px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; font-family:var(--serif); font-style:italic; }
-.t-album { font-size:12px; color:var(--text3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .t-bpm { font-size:12px; color:var(--text3); text-align:center; }
 .t-dur { font-size:12px; color:var(--text3); text-align:right; }
 
@@ -628,7 +632,7 @@ html, body {
 /* Resizable columns — widths applied directly via JS inline style */
 .track-table-head, .track-row {
   display:grid;
-  grid-template-columns: 36px 44px 240px 160px 60px 60px 80px;
+  grid-template-columns: 36px 44px 200px 140px 140px 60px 56px 80px;
   gap:0 8px; align-items:center;
 }
 .col-resize-handle {
@@ -701,30 +705,31 @@ html, body {
 }
 
 .sidebar-brand {
-  padding:18px 20px 16px;
+  padding:16px 20px 14px;
   border-bottom:1px solid var(--border2);
   flex-shrink:0;
 }
 .brand-wordmark {
-  display:flex; align-items:center; gap:0;
+  display:flex; align-items:center; gap:12px;
   font-family:var(--font-display);
-  font-size:18px; letter-spacing:.04em; line-height:1;
+  line-height:1;
+}
+.brand-logo-img {
+  height:40px; width:40px; object-fit:contain; border-radius:6px; flex-shrink:0;
+}
+.brand-text-stack {
+  display:flex; flex-direction:column; gap:0;
 }
 .brand-word-bella {
   color:var(--text);
+  font-size:26px; letter-spacing:.04em; line-height:1;
 }
 .brand-word-music {
   color:var(--gold);
-  margin-left:8px;
+  font-size:16px; letter-spacing:.12em; line-height:1; margin-top:1px;
 }
-.brand-divider {
-  width:1px; height:18px; background:var(--border2);
-  margin:0 14px; flex-shrink:0;
-}
-.brand-subtitle {
-  font-family:var(--serif); font-style:italic;
-  font-size:13px; color:var(--text3); letter-spacing:.01em;
-}
+.brand-divider { display:none; }
+.brand-subtitle { display:none; }
 
 .sidebar-user {
   padding:12px 20px;
@@ -908,7 +913,7 @@ html, body {
 /* Track list */
 .track-table-head {
   display:grid;
-  grid-template-columns: 36px 48px 1fr 100px 64px 56px 96px;
+  grid-template-columns: 36px 44px 200px 140px 140px 60px 56px 80px;
   gap:10px;
   padding:6px 10px;
   border-bottom:1px solid var(--border);
@@ -923,7 +928,7 @@ html, body {
 
 .track-row {
   display:grid;
-  grid-template-columns: 36px 48px 1fr 100px 64px 56px 96px;
+  grid-template-columns: 36px 44px 200px 140px 140px 60px 56px 80px;
   gap:10px;
   padding:9px 10px;
   border-radius:var(--radius);
@@ -935,6 +940,7 @@ html, body {
 .track-row:hover { background:rgba(255,255,255,0.03); }
 .track-row.playing { background:var(--accent-glow); border-color:rgba(201,168,76,0.12); }
 .track-row.playing .t-title { color:var(--accent-bright); }
+.track-row.playing .t-title-cell { color:var(--accent-bright); }
 .track-row.selected { background:rgba(201,168,76,0.08); border-color:rgba(201,168,76,0.2); }
 .track-row.selected.playing { background:var(--accent-glow); }
 
@@ -1628,13 +1634,12 @@ html, body {
         <div class="sidebar-resize-handle-icon">⟷</div>
       </div>
       <div class="sidebar-brand">
-        <div style="display:flex;align-items:center;gap:0;">
-          <img id="sidebar-logo" src="" alt="" style="height:28px;width:28px;object-fit:contain;border-radius:4px;margin-right:8px;display:none;">
-          <div class="brand-wordmark" style="letter-spacing:.01em;">
-            <span class="brand-word-bella">BELLADONNA</span><span class="brand-word-music" style="margin-left:5px;">MUSIC</span>
+        <div class="brand-wordmark">
+          <img id="sidebar-logo" src="" alt="" class="brand-logo-img" style="display:none;">
+          <div class="brand-text-stack">
+            <span class="brand-word-bella">BELLADONNA</span>
+            <span class="brand-word-music">MUSIC</span>
           </div>
-          <div class="brand-divider"></div>
-          <span class="brand-subtitle">Host Player</span>
         </div>
       </div>
       <div class="sidebar-user">
@@ -1712,6 +1717,10 @@ html, body {
           <button class="btn-sm" id="btn-freeplay" onclick="toggleFreePlay()" style="display:none;" title="Disable auto-advance timer">
             ∞ Free Play
           </button>
+          <div class="col-add-wrap" id="fade-mode-wrap-top" style="flex-shrink:0;">
+            <button class="btn-sm" id="btn-mode-top" onclick="event.stopPropagation();toggleFadeMenu()">↔ Fade ▾</button>
+            <div class="col-add-menu" id="fade-mode-menu" style="min-width:180px;right:0;left:auto;"></div>
+          </div>
           <button class="btn-sm" onclick="loadFolder()" title="Load music folder">📂</button>
         </div>
       </div>
@@ -2694,24 +2703,32 @@ function setPlSort(key) {
 // Column layout: [#, art, title, album, bpm, time, actions]
 // (Artist is shown inline under Title, not a separate grid column, to match the existing row template)
 const COL_DEFS = [
-  { idx:0, key:'num',    label:'#',      locked:true },
+  { idx:0, key:'num',    label:'#',      locked:true  },
   { idx:1, key:'art',    label:'Cover',  locked:false },
-  { idx:2, key:'title',  label:'Title',  locked:true },  // title+artist combined, can't hide
-  { idx:3, key:'album',  label:'Album',  locked:false },
-  { idx:4, key:'bpm',    label:'BPM',    locked:false },
-  { idx:5, key:'time',   label:'Time',   locked:false },
-  { idx:6, key:'actions',label:'',       locked:true }
+  { idx:2, key:'title',  label:'Title',  locked:true  },
+  { idx:3, key:'artist', label:'Artist', locked:false },
+  { idx:4, key:'album',  label:'Album',  locked:false },
+  { idx:5, key:'bpm',    label:'BPM',    locked:false },
+  { idx:6, key:'time',   label:'Time',   locked:false },
+  { idx:7, key:'actions',label:'',       locked:true  }
 ];
 
-let colWidths = [36, 44, 240, 160, 60, 60, 80];
-let colVisible = [true, true, true, true, true, true, true];
+let colWidths = [36, 44, 200, 140, 140, 60, 56, 80];
+let colVisible = [true, true, true, true, true, true, true, true];
 
 function loadColPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem('bella_col_prefs') || 'null');
     if (saved) {
-      if (Array.isArray(saved.widths) && saved.widths.length === 7) colWidths = saved.widths;
-      if (Array.isArray(saved.visible) && saved.visible.length === 7) colVisible = saved.visible;
+      // Accept 8-col prefs; if old 7-col data, insert Artist column at idx 3
+      if (Array.isArray(saved.widths)) {
+        if (saved.widths.length === 8) colWidths = saved.widths;
+        else if (saved.widths.length === 7) colWidths = [saved.widths[0],saved.widths[1],saved.widths[2],140,saved.widths[3],saved.widths[4],saved.widths[5],saved.widths[6]];
+      }
+      if (Array.isArray(saved.visible)) {
+        if (saved.visible.length === 8) colVisible = saved.visible;
+        else if (saved.visible.length === 7) colVisible = [saved.visible[0],saved.visible[1],saved.visible[2],true,saved.visible[3],saved.visible[4],saved.visible[5],saved.visible[6]];
+      }
     }
   } catch(e){}
 }
@@ -2729,7 +2746,7 @@ function applyColWidths() {
     el.style.gridTemplateColumns = cols;
   });
   document.querySelectorAll('.track-table-head > div, .track-row > div').forEach((cell, i) => {
-    const colIdx = i % 7;
+    const colIdx = i % 8;
     cell.style.overflow = colVisible[colIdx] ? '' : 'hidden';
     cell.style.padding  = colVisible[colIdx] ? '' : '0';
     cell.style.minWidth = colVisible[colIdx] ? '' : '0';
@@ -2740,7 +2757,7 @@ function toggleCol(i) {
   const def = COL_DEFS[i];
   if (def && def.locked) return; // can't hide locked columns
   colVisible[i] = !colVisible[i];
-  colVisible[0] = true; colVisible[6] = true; colVisible[2] = true;
+  colVisible[0] = true; colVisible[7] = true; colVisible[2] = true;
   saveColPrefs();
   applyColWidths();
   renderColMenu();
@@ -2891,9 +2908,10 @@ function renderTrackList() {
     '<div>#</div>' +
     '<div></div>' +
     '<div class="col-sort '+(S.plSort==="title"?"active":"")+'" onclick="setPlSort(\x27title\x27)">Title<div class="col-resize-handle" data-col="2"></div></div>' +
-    '<div class="col-sort '+(S.plSort==="album"?"active":"")+'" onclick="setPlSort(\x27album\x27)">Album<div class="col-resize-handle" data-col="3"></div></div>' +
-    '<div class="col-sort '+(S.plSort==="bpm"?"active":"")+'" onclick="setPlSort(\x27bpm\x27)">BPM<div class="col-resize-handle" data-col="4"></div></div>' +
-    '<div class="col-sort '+(S.plSort==="duration"?"active":"")+'" onclick="setPlSort(\x27duration\x27)">Time<div class="col-resize-handle" data-col="5"></div></div>' +
+    '<div class="col-sort '+(S.plSort==="artist"?"active":"")+'" onclick="setPlSort(\x27artist\x27)">Artist<div class="col-resize-handle" data-col="3"></div></div>' +
+    '<div class="col-sort '+(S.plSort==="album"?"active":"")+'" onclick="setPlSort(\x27album\x27)">Album<div class="col-resize-handle" data-col="4"></div></div>' +
+    '<div class="col-sort '+(S.plSort==="bpm"?"active":"")+'" onclick="setPlSort(\x27bpm\x27)">BPM<div class="col-resize-handle" data-col="5"></div></div>' +
+    '<div class="col-sort '+(S.plSort==="duration"?"active":"")+'" onclick="setPlSort(\x27duration\x27)">Time<div class="col-resize-handle" data-col="6"></div></div>' +
     '<div class="col-add-wrap">' +
       '<button class="col-add-btn" onclick="event.stopPropagation();toggleColMenu(\x27pl-col-menu\x27)" title="Choose columns">+</button>' +
       '<div class="col-add-menu" id="pl-col-menu"></div>' +
@@ -2954,12 +2972,9 @@ function renderRow(t, displayIdx, origIdx) {
     'draggable="true" data-orig-idx="'+i+'" onclick="selectRow(\'playlist\',\''+t.id+'\',this)" ondblclick="playAt('+i+')">' +
     '<div class="t-num">'+(playing?'<div class="waveform">'+'<div class="wb"></div>'.repeat(5)+'</div>':'<span style="cursor:grab;opacity:0.4">⠿</span>')+'</div>' +
     '<div class="t-art">'+(t.artUrl?'<img src="'+t.artUrl+'" loading="lazy">':'<div class="t-art-ph">♪</div>')+'</div>' +
-    '<div class="t-info">' +
-      '<div class="t-title">'+esc(t.title||t.filename||'Unknown')+'</div>' +
-      '<div class="t-artist">'+esc(t.artist||'Unknown Artist')+'</div>' +
-      ((hasBingo||hasTriviaS||hasTriviaE)?dots:'') +
-    '</div>' +
-    '<div class="t-album">'+esc(t.album||'—')+'</div>' +
+    '<div class="t-title-cell">'+esc(t.title||t.filename||'Unknown')+'</div>' +
+    '<div class="t-artist-cell">'+esc(t.artist||'')+'</div>' +
+    '<div class="t-album">'+esc(t.album||'')+'</div>' +
     '<div class="t-bpm">'+(t.bpm?Math.round(t.bpm):'—')+'</div>' +
     '<div class="t-dur">'+fmt(t.duration||0)+'</div>' +
     '<div class="t-actions">' +
@@ -3099,11 +3114,14 @@ function showReconnectBanner(handle) {
   banner.innerHTML = `
     <span style="font-size:22px;">📂</span>
     <div style="flex:1;">
-      <div style="font-family:var(--font-heading);font-size:12px;letter-spacing:.06em;color:var(--text);margin-bottom:3px;">Music folder found</div>
-      <div style="font-size:12px;color:var(--text3);font-family:var(--serif);font-style:italic;">Click to reconnect — browser requires one-time permission per session.</div>
+      <div style="font-family:var(--font-heading);font-size:12px;letter-spacing:.06em;color:var(--gold2);margin-bottom:3px;">Music folder found — click to reconnect</div>
+      <div style="font-size:12px;color:var(--text3);font-family:var(--serif);font-style:italic;">Browser requires one click per session to re-grant folder access.</div>
     </div>
-    <button onclick="requestFolderPermission()" style="background:var(--gold-dim);border:1px solid var(--gold-border2);color:var(--gold2);font-family:var(--font-heading);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:8px 16px;border-radius:var(--radius);cursor:pointer;white-space:nowrap;">Reconnect</button>
+    <button onclick="requestFolderPermission()" style="background:var(--gold-shine);border:none;color:#000;font-family:var(--font-heading);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:8px 16px;border-radius:var(--radius);cursor:pointer;white-space:nowrap;font-weight:600;">Connect</button>
   `;
+  // Make entire banner clickable
+  banner.style.cursor='pointer';
+  banner.onclick = requestFolderPermission;
   lib.parentNode.insertBefore(banner, lib);
   // Store handle for the button to use
   window._pendingFolderHandle = handle;
@@ -3475,9 +3493,10 @@ function renderLibrary() {
     '<div>#</div>' +
     '<div></div>' +
     '<div class="col-sort '+(S.libSort==="title"?"active":"")+'" onclick="setLibSort(\x27title\x27)">Title<div class="col-resize-handle" data-col="2"></div></div>' +
-    '<div class="col-sort '+(S.libSort==="album"?"active":"")+'" onclick="setLibSort(\x27album\x27)">Album<div class="col-resize-handle" data-col="3"></div></div>' +
-    '<div class="col-sort '+(S.libSort==="bpm"?"active":"")+'" onclick="setLibSort(\x27bpm\x27)">BPM<div class="col-resize-handle" data-col="4"></div></div>' +
-    '<div class="col-sort '+(S.libSort==="duration"?"active":"")+'" onclick="setLibSort(\x27duration\x27)">Time<div class="col-resize-handle" data-col="5"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="artist"?"active":"")+'" onclick="setLibSort(\x27artist\x27)">Artist<div class="col-resize-handle" data-col="3"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="album"?"active":"")+'" onclick="setLibSort(\x27album\x27)">Album<div class="col-resize-handle" data-col="4"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="bpm"?"active":"")+'" onclick="setLibSort(\x27bpm\x27)">BPM<div class="col-resize-handle" data-col="5"></div></div>' +
+    '<div class="col-sort '+(S.libSort==="duration"?"active":"")+'" onclick="setLibSort(\x27duration\x27)">Time<div class="col-resize-handle" data-col="6"></div></div>' +
     '<div class="col-add-wrap">' +
       '<button class="col-add-btn" onclick="event.stopPropagation();toggleColMenu(\x27lib-col-menu\x27)" title="Choose columns">+</button>' +
       '<div class="col-add-menu" id="lib-col-menu"></div>' +
@@ -3487,7 +3506,8 @@ function renderLibrary() {
       '<div class="track-row'+(isRowSelected('library',t.id)?' selected':'')+'" onclick="selectRow(\'library\',\''+t.id+'\',this)" ondblclick="playFromLibrary(\''+t.id+'\')">' +
         '<div class="t-num">'+(i+1)+'</div>' +
         '<div class="t-art">'+(t.artUrl?'<img src="'+t.artUrl+'" loading="lazy">':'<div class="t-art-ph">♪</div>')+'</div>' +
-        '<div class="t-info"><div class="t-title">'+esc(t.title)+'</div><div class="t-artist">'+esc(t.artist)+'</div></div>' +
+        '<div class="t-title-cell">'+esc(t.title||t.filename||'')+'</div>' +
+        '<div class="t-artist-cell">'+esc(t.artist||'')+'</div>' +
         '<div class="t-album">'+esc(t.album||'—')+'</div>' +
         '<div class="t-bpm">'+(t.bpm?Math.round(t.bpm):'—')+'</div>' +
         '<div class="t-dur">'+fmt(t.duration||0)+'</div>' +
@@ -3501,15 +3521,37 @@ function renderLibrary() {
 }
 
 function addToCurrentPL(id) {
-  if(!S.currentPL || S.currentPL.id === '__library__'){toast('Select a playlist first');return;}
-  if(!plCanEdit(S.currentPL)){toast("You don't have permission to edit this playlist");return;}
-  const t=S.library.find(t=>t.id===id);
+  // Show playlist picker popup
+  const t = S.library.find(x=>x.id===id);
   if(!t) return;
-  if(!S.currentPL.tracks) S.currentPL.tracks=[];
-  S.currentPL.tracks.push({...t});
-  savePL(S.currentPL);
-  renderTrackList();
-  toast(`Added "${t.title}" to ${S.currentPL.name}`);
+  // Build menu of playlists user can edit
+  const editable = S.playlists.filter(pl=>plCanEdit(pl));
+  if(!editable.length){toast('No editable playlists — create one first');return;}
+  // Remove existing picker
+  const old=document.getElementById('add-to-pl-picker'); if(old) old.remove();
+  const menu=document.createElement('div');
+  menu.id='add-to-pl-picker';
+  menu.style.cssText='position:fixed;z-index:9999;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);padding:4px 0;min-width:220px;max-height:300px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.7);';
+  const menuItems = editable.map(pl=>{
+    return '<div class="ctx-item" onclick="doAddToPL(\x27'+id+'\x27,\x27'+pl.id+'\x27);document.getElementById(\x27add-to-pl-picker\x27).remove()">'+esc(pl.name)+'</div>';
+  }).join('');
+  menu.innerHTML='<div style="padding:8px 14px 6px;font-family:var(--font-heading);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);">Add to playlist</div>'+menuItems;
+  // Position near cursor (use last click event)
+  const x=Math.min(window._lastX||400, window.innerWidth-240);
+  const y=Math.min(window._lastY||400, window.innerHeight-320);
+  menu.style.left=x+'px'; menu.style.top=y+'px';
+  document.body.appendChild(menu);
+  setTimeout(()=>document.addEventListener('click',function h(){menu.remove();document.removeEventListener('click',h);},{once:true}),0);
+}
+function doAddToPL(trackId, plId) {
+  const t=S.library.find(x=>x.id===trackId); if(!t) return;
+  const pl=S.playlists.find(p=>p.id===plId); if(!pl) return;
+  if(!pl.tracks) pl.tracks=[];
+  if(pl.tracks.some(x=>x.id===trackId)){toast('Already in '+pl.name);return;}
+  pl.tracks.push({...t});
+  savePL(pl);
+  if(S.currentPL?.id===plId) renderTrackList();
+  toast('Added "'+t.title+'" to '+pl.name);
 }
 
 function deleteFromLibrary(id) {
@@ -4595,7 +4637,6 @@ function updateBingoLinkUI() {
 
 function pingBingoApp(track) {
   if (!S.bingoLinked || !S.bingoSessionKey) return;
-  // Use main db — same Firebase project, always initialized, no race condition
   const dbRef = db || S.bingoDb;
   if (!dbRef) return;
   const path = 'sessions/' + S.bingoSessionKey + '/nowPlaying';
@@ -4632,6 +4673,7 @@ function checkBingoLaunchParam() {
   toast('◈ Bingo linked!', 3000);
 }
 
+document.addEventListener('mousemove', e => { window._lastX=e.clientX; window._lastY=e.clientY; });
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   if (e.code === 'Space')      { e.preventDefault(); togglePlay(); }

@@ -4594,12 +4594,18 @@ function updateBingoLinkUI() {
 }
 
 function pingBingoApp(track) {
-  if (!S.bingoLinked || !S.bingoSessionKey || !S.bingoDb) return;
-  S.bingoDb.ref('sessions/' + S.bingoSessionKey + '/nowPlaying').set({
+  if (!S.bingoLinked || !S.bingoSessionKey) return;
+  // Use main db — same Firebase project, always initialized, no race condition
+  const dbRef = db || S.bingoDb;
+  if (!dbRef) return;
+  const path = 'sessions/' + S.bingoSessionKey + '/nowPlaying';
+  dbRef.ref(path).set({
     title:  track.title  || track.filename || '',
     artist: track.artist || '',
     at:     Date.now()
-  }).catch(e => console.warn('Bingo bridge: write failed', e));
+  }).then(() => {
+    console.log('[Bingo bridge] Pinged nowPlaying:', path, track.title);
+  }).catch(e => console.warn('[Bingo bridge] Write failed:', e));
 }
 
 // Opens the bingo app pre-linked to this player's current session.

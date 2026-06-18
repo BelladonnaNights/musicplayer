@@ -1654,8 +1654,11 @@ html, body {
         <div class="nav-item" id="nav-shuffle" onclick="toggleShuffle()" title="Shuffle playback order">
           <span class="nav-icon">⇄</span> Shuffle
         </div>
+        <div class="nav-item" id="nav-mysettings" onclick="showView('mysettings')">
+          <span class="nav-icon">⚙</span> My Settings
+        </div>
         <div class="nav-item" id="nav-admin" onclick="showView('admin')" style="display:none">
-          <span class="nav-icon">⚙</span> Admin
+          <span class="nav-icon">◆</span> Admin
         </div>
       </div>
       <!-- Scrollable middle section: playlists only -->
@@ -1665,7 +1668,7 @@ html, body {
           <div style="color:var(--text-ghost);font-size:12px;padding:6px 12px;font-style:italic;">Loading…</div>
         </div>
         <div style="padding:0 10px 4px;">
-          <button class="btn-new-pl" onclick="openModal('modal-new-pl')">+ New Playlist</button>
+          <button class="btn-new-pl" onclick="document.getElementById('npl-scope-field').style.display=S.isAdmin?'block':'none';openModal('modal-new-pl')">+ New Playlist</button>
         </div>
       </div>
       <!-- Bingo Link — pinned directly above footer, expands upward -->
@@ -1769,7 +1772,69 @@ html, body {
               </table>
             </div>
             <div class="admin-card">
-              <div class="admin-card-title">🎛 Playback Settings</div>
+              <div class="admin-card-title">🎛 Default Settings for New Hosts</div>
+              <div style="font-size:11px;color:var(--text3);font-style:italic;margin-bottom:10px;">Each host can change these for themselves once they start. This only sets what a brand-new host begins with.</div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Crossfade Duration</div>
+                  <div class="settings-label-sub">Seconds at end of song</div>
+                </div>
+                <div class="range-wrap">
+                  <input type="range" class="range-input" id="def-xfade" min="0" max="30" value="8" oninput="document.getElementById('val-def-xfade').textContent=this.value+'s';saveDefaultSetting('crossfade',parseFloat(this.value))">
+                  <span class="range-val" id="val-def-xfade">8s</span>
+                </div>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Default Timer</div>
+                  <div class="settings-label-sub">Seconds per song (0 = full song)</div>
+                </div>
+                <div class="range-wrap">
+                  <input type="range" class="range-input" id="def-timer" min="0" max="300" step="15" value="0" oninput="document.getElementById('val-def-timer').textContent=(this.value?this.value+'s':'Off');saveDefaultSetting('timer',parseFloat(this.value))">
+                  <span class="range-val" id="val-def-timer">Off</span>
+                </div>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">BPM Crossfade Match</div>
+                  <div class="settings-label-sub">Sync beat grid on transition</div>
+                </div>
+                <div class="toggle on" id="tog-def-bpm" onclick="this.classList.toggle('on');saveDefaultSetting('bpmMatch',this.classList.contains('on'))"></div>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Clean Skip Mode</div>
+                  <div class="settings-label-sub">Fast fade on manual skip</div>
+                </div>
+                <div class="toggle on" id="tog-def-cleanskip" onclick="this.classList.toggle('on');saveDefaultSetting('cleanSkip',this.classList.contains('on'))"></div>
+              </div>
+            </div>
+            <div class="admin-card" style="grid-column:1/-1">
+              <div class="admin-card-title">🎯 Host Cue Point Overrides
+                <span style="font-size:10px;color:var(--text3);font-style:italic;font-weight:normal;text-transform:none;letter-spacing:0;">songs where a host prefers a different cue than the global default</span>
+              </div>
+              <div id="adm-cue-overrides"><div style="color:var(--text-muted);font-size:13px;font-style:italic;">No overrides set by any host yet</div></div>
+            </div>
+            <div class="admin-card" style="grid-column:1/-1">
+              <div class="admin-card-title">
+                📋 Session History
+                <select class="select-input" id="log-filter" onchange="filterLog()" style="width:auto;padding:4px 10px;font-size:11px;">
+                  <option value="">All Users</option>
+                </select>
+              </div>
+              <div class="session-log" id="adm-log"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" id="view-mysettings">
+        <div class="view-scroll">
+          <div class="pl-title">My Playback Settings</div>
+          <div class="pl-meta" style="margin-top:4px;">Just for you — these don't affect any other host</div>
+          <div class="admin-grid">
+            <div class="admin-card">
+              <div class="admin-card-title">🎛 Playback</div>
               <div class="settings-row">
                 <div>
                   <div class="settings-label">Crossfade Duration</div>
@@ -1804,15 +1869,6 @@ html, body {
                 </div>
                 <div class="toggle on" id="tog-cleanskip" onclick="toggleSetting('cleanSkip')"></div>
               </div>
-            </div>
-            <div class="admin-card" style="grid-column:1/-1">
-              <div class="admin-card-title">
-                📋 Session History
-                <select class="select-input" id="log-filter" onchange="filterLog()" style="width:auto;padding:4px 10px;font-size:11px;">
-                  <option value="">All Users</option>
-                </select>
-              </div>
-              <div class="session-log" id="adm-log"></div>
             </div>
           </div>
         </div>
@@ -1888,6 +1944,14 @@ html, body {
         <option value="bingo">Bingo</option>
       </select>
     </div>
+    <div class="field" id="npl-scope-field" style="display:none;">
+      <label class="field-label">Where should this live?</label>
+      <select class="select-input" id="npl-scope">
+        <option value="personal">My Playlists (private to me)</option>
+        <option value="admin-bingo">Bingo (admin — visible to all hosts)</option>
+        <option value="admin-belladonna">Belladonna Playlists (admin — visible to all hosts)</option>
+      </select>
+    </div>
     <div class="field">
       <label class="field-label">Per-Playlist Timer Override <span style="font-size:11px;color:var(--text-muted);font-style:italic;">(seconds, 0 = use global default)</span></label>
       <input class="field-input" id="npl-timer" type="number" min="0" max="600" placeholder="0" value="0">
@@ -1944,7 +2008,14 @@ html, body {
   <div class="modal">
     <div class="modal-title">Cue Point Editor</div>
     <div id="cue-track-name" style="font-size:13px;color:var(--text-secondary);margin-bottom:6px;font-style:italic;"></div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px;">Click each timeline to set the cue. Pink = Bingo start · Purple = Trivia start · Gold = Trivia end.</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">Click each timeline to set the cue. Pink = Bingo start · Purple = Trivia start · Gold = Trivia end.</div>
+    <div class="settings-row" id="cue-override-row" style="padding:0 0 18px;border-bottom:none;">
+      <div>
+        <div class="settings-label">Only for me</div>
+        <div class="settings-label-sub" id="cue-override-sub">Saves a personal override — doesn't change it for other hosts</div>
+      </div>
+      <div class="toggle" id="tog-cue-override" onclick="this.classList.toggle('on');updateCueOverrideLabel()"></div>
+    </div>
 
     <!-- Bingo Cue -->
     <div class="cue-section">
@@ -2077,7 +2148,8 @@ const S = {
   fadeMode: 'crossfade', // crossfade | clean | off
   freePlay: false,
   volume: 0.8,
-  cuePoints: {}, // trackId -> {bingo, triviaS, triviaE}
+  cuePoints: {}, // trackId -> {bingo, triviaS, triviaE} — GLOBAL default, set by anyone, visible to all
+  cueOverrides: {}, // trackId -> {bingo, triviaS, triviaE} — PERSONAL to this host only
   settings: { crossfade: 8, timer: 0, bpmMatch: true, cleanSkip: true },
   sessionId: null,
   sessionStart: null,
@@ -2286,39 +2358,86 @@ function showView(v) {
 }
 
 // ═══════════════ PLAYLISTS ═══════════════
+// Playlist scopes:
+//   admin-bingo        -> player/admin_playlists/bingo/<id>        (admin-managed, visible+readonly to all)
+//   admin-belladonna   -> player/admin_playlists/belladonna/<id>   (admin-managed, visible+readonly to all)
+//   shared             -> player/shared_playlists/<id>             (any host can publish; all can view+duplicate)
+//   personal           -> player/users/<username>/playlists/<id>   (private to that host, editable by them + admin)
+
+function plDbPath(pl) {
+  if (pl.scope === 'admin-bingo')      return 'player/admin_playlists/bingo/' + pl.id;
+  if (pl.scope === 'admin-belladonna') return 'player/admin_playlists/belladonna/' + pl.id;
+  if (pl.scope === 'shared')           return 'player/shared_playlists/' + pl.id;
+  return 'player/users/' + (pl.owner || S.user.username) + '/playlists/' + pl.id;
+}
+
+function plCanEdit(pl) {
+  if (S.isAdmin) return true;
+  if (pl.scope === 'personal' && pl.owner === S.user.username) return true;
+  return false;
+}
+
 async function loadPlaylists() {
+  let merged = [];
+  let localBackup = {};
+  try {
+    const local = localStorage.getItem('bella_playlists');
+    if (local) JSON.parse(local).forEach(p => { localBackup[p.id] = p; });
+  } catch(e){}
+
   if (db) {
     try {
-      const snap = await db.ref('player/playlists').once('value');
-      const data = snap.val() || {};
-      const fromDb = Object.entries(data).map(([id,p])=>({id,...p}));
-      if (fromDb.length) {
-        // Re-merge artUrls from localStorage — stripped before saving to Firebase
-        let artCache = {};
-        try {
-          const local = localStorage.getItem('bella_playlists');
-          if (local) {
-            JSON.parse(local).forEach(p => {
-              (p.tracks||[]).forEach(t => { if (t.artUrl) artCache[t.id] = t.artUrl; });
-            });
-          }
-        } catch(e){}
-        fromDb.forEach(p => {
-          (p.tracks||[]).forEach(t => { if (artCache[t.id]) t.artUrl = artCache[t.id]; });
+      const [bingoSnap, bellaSnap, sharedSnap, mineSnap] = await Promise.all([
+        db.ref('player/admin_playlists/bingo').once('value'),
+        db.ref('player/admin_playlists/belladonna').once('value'),
+        db.ref('player/shared_playlists').once('value'),
+        db.ref('player/users/' + S.user.username + '/playlists').once('value')
+      ]);
+      const fromBingo  = Object.entries(bingoSnap.val()  || {}).map(([id,p])=>({id,...p,scope:'admin-bingo'}));
+      const fromBella  = Object.entries(bellaSnap.val()  || {}).map(([id,p])=>({id,...p,scope:'admin-belladonna'}));
+      const fromShared = Object.entries(sharedSnap.val() || {}).map(([id,p])=>({id,...p,scope:'shared'}));
+      const fromMine   = Object.entries(mineSnap.val()   || {}).map(([id,p])=>({id,...p,scope:'personal',owner:S.user.username}));
+      merged = [...fromBingo, ...fromBella, ...fromShared, ...fromMine];
+
+      // Re-merge artUrls stripped before saving to Firebase
+      merged.forEach(p => {
+        (p.tracks||[]).forEach(t => {
+          const cached = localBackup[p.id]?.tracks?.find(lt => lt.id === t.id);
+          if (cached?.artUrl) t.artUrl = cached.artUrl;
         });
-        S.playlists = fromDb;
-        renderSidePlaylists();
-        return;
-      }
-      // Firebase connected but empty — fall through to localStorage
+      });
     } catch(e){ console.warn('loadPlaylists Firebase error:', e.message); }
   }
-  // Fallback: localStorage
-  try {
-    const saved = localStorage.getItem('bella_playlists');
-    if (saved) S.playlists = JSON.parse(saved);
-  } catch(e){}
+
+  if (!merged.length && Object.keys(localBackup).length) {
+    merged = Object.values(localBackup);
+  }
+
+  S.playlists = merged;
   renderSidePlaylists();
+}
+
+const PL_SECTIONS = [
+  { scope:'admin-bingo',      label:'Bingo',               icon:'◈', dragGroup:'admin-bingo' },
+  { scope:'admin-belladonna', label:'Belladonna Playlists', icon:'♪', dragGroup:'admin-belladonna' },
+  { scope:'shared',           label:'Shared by Hosts',      icon:'⇄', dragGroup:'shared' },
+  { scope:'personal',         label:'My Playlists',         icon:'☆', dragGroup:'personal' }
+];
+
+function renderPLItem(p, i) {
+  const activePLId = S.currentPL?.id === '__library__' ? null : S.currentPL?.id;
+  const canEdit = plCanEdit(p);
+  const sharedTag = p.scope === 'shared' && p.sharedBy ? '<span style="font-size:9px;color:var(--text3);font-style:italic;margin-left:4px;">by '+esc(p.sharedBy)+'</span>' : '';
+  return '<div class="pl-item '+(activePLId===p.id?'active':'')+'" '+
+    'draggable="'+(canEdit?'true':'false')+'" data-pl-id="'+p.id+'" data-pl-idx="'+i+'" data-pl-scope="'+p.scope+'" '+
+    'onclick="selectPL(\''+p.id+'\')" '+
+    'oncontextmenu="showPLMenu(event,\''+p.id+'\')">'+
+    (canEdit ? '<span style="cursor:grab;opacity:0.4;margin-right:2px;font-size:13px;">⠿</span>' : '<span style="width:13px;display:inline-block;"></span>') +
+    '<span>'+(p.type==='bingo'?'◈':'♪')+'</span>'+
+    '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;">'+esc(p.name)+'</span>'+
+    sharedTag +
+    '<span class="pl-badge '+p.type+'">'+(p.type==='bingo'?'BINGO':'GEN')+'</span>'+
+  '</div>';
 }
 
 function renderSidePlaylists() {
@@ -2327,27 +2446,43 @@ function renderSidePlaylists() {
     el.innerHTML='<div style="color:var(--text-ghost);font-size:12px;padding:6px 12px;font-style:italic;">No playlists yet</div>';
     return;
   }
-  const activePLId = S.currentPL?.id === '__library__' ? null : S.currentPL?.id;
-  el.innerHTML = S.playlists.map((p,i)=>`
-    <div class="pl-item ${activePLId===p.id?'active':''}"
-      draggable="true" data-pl-id="${p.id}" data-pl-idx="${i}"
-      onclick="selectPL('${p.id}')"
-      oncontextmenu="showPLMenu(event,'${p.id}')">
-      <span style="cursor:grab;opacity:0.4;margin-right:2px;font-size:13px;">⠿</span>
-      <span>${p.type==='bingo'?'◈':'♪'}</span>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;">${esc(p.name)}</span>
-      <span class="pl-badge ${p.type}">${p.type==='bingo'?'BINGO':'GEN'}</span>
-    </div>`).join('');
 
-  let dragIdx = null;
-  el.querySelectorAll('.pl-item[draggable]').forEach(row => {
-    row.addEventListener('dragstart', e => { dragIdx=parseInt(row.dataset.plIdx); row.style.opacity='0.4'; e.dataTransfer.effectAllowed='move'; });
+  let html = '';
+  PL_SECTIONS.forEach(section => {
+    const items = S.playlists.filter(p => p.scope === section.scope);
+    html += '<div class="sidebar-divider" style="border-top:none;margin-top:2px;padding:8px 16px 4px;display:flex;align-items:center;gap:6px;">'+
+      '<span>'+section.icon+'</span><span>'+section.label+'</span>'+
+      (items.length ? '<span style="font-size:10px;color:var(--text3);margin-left:auto;">'+items.length+'</span>' : '') +
+    '</div>';
+    if (!items.length) {
+      html += '<div style="color:var(--text-ghost);font-size:11px;padding:2px 16px 8px;font-style:italic;">'+
+        (section.scope==='personal' ? 'Create your first playlist below' :
+         section.scope==='shared' ? 'Nothing shared yet' :
+         'None set up yet') + '</div>';
+    } else {
+      html += items.map((p,i)=>renderPLItem(p,i)).join('');
+    }
+  });
+  el.innerHTML = html;
+
+  // Drag-to-reorder — only within the same scope section, and only if the item is editable
+  let dragIdx = null, dragScope = null;
+  el.querySelectorAll('.pl-item[draggable="true"]').forEach(row => {
+    row.addEventListener('dragstart', e => {
+      dragIdx = S.playlists.findIndex(p=>p.id===row.dataset.plId);
+      dragScope = row.dataset.plScope;
+      row.style.opacity='0.4'; e.dataTransfer.effectAllowed='move';
+    });
     row.addEventListener('dragend', () => { row.style.opacity=''; });
-    row.addEventListener('dragover', e => { e.preventDefault(); row.classList.add('drag-over'); });
+    row.addEventListener('dragover', e => {
+      if (row.dataset.plScope !== dragScope) return; // no cross-section drops
+      e.preventDefault(); row.classList.add('drag-over');
+    });
     row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
     row.addEventListener('drop', e => {
       e.preventDefault(); row.classList.remove('drag-over');
-      const destIdx = parseInt(row.dataset.plIdx);
+      if (row.dataset.plScope !== dragScope) return;
+      const destIdx = S.playlists.findIndex(p=>p.id===row.dataset.plId);
       if (dragIdx===null||dragIdx===destIdx) return;
       const [moved]=S.playlists.splice(dragIdx,1); S.playlists.splice(destIdx,0,moved);
       dragIdx=null; savePlOrder(); renderSidePlaylists();
@@ -2357,21 +2492,34 @@ function renderSidePlaylists() {
 
 async function savePlOrder() {
   try { localStorage.setItem('bella_playlists', JSON.stringify(S.playlists)); } catch(e){}
-  if (db) S.playlists.forEach((p,i)=>{ p.order=i; db.ref('player/playlists/'+p.id+'/order').set(i).catch(()=>{}); });
+  if (db) S.playlists.forEach((p,i)=>{
+    p.order=i;
+    if (!plCanEdit(p)) return; // don't write order for items we can't edit (read-only admin/shared for hosts)
+    db.ref(plDbPath(p)+'/order').set(i).catch(()=>{});
+  });
 }
 
 function showPLMenu(e, plId) {
   e.preventDefault(); e.stopPropagation(); closePLMenu();
+  const pl = S.playlists.find(p=>p.id===plId); if(!pl) return;
+  const canEdit = plCanEdit(pl);
+  const isOwnPersonal = pl.scope==='personal' && pl.owner===S.user.username;
+
   const menu=document.createElement('div');
   menu.id='pl-ctx-menu';
-  menu.style.cssText='position:fixed;z-index:9999;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);padding:4px 0;min-width:160px;box-shadow:var(--shadow-deep);';
-  menu.innerHTML=
-    '<div class="ctx-item" onclick="editPlaylist(\''+plId+'\')">✏️ Edit</div>'+
-    '<div class="ctx-item" onclick="duplicatePL(\''+plId+'\')">⧉ Duplicate</div>'+
-    '<div class="ctx-divider"></div>'+
-    '<div class="ctx-item ctx-danger" onclick="deletePL(\''+plId+'\')">✕ Delete</div>';
-  menu.style.left=Math.min(e.clientX,window.innerWidth-180)+'px';
-  menu.style.top=Math.min(e.clientY,window.innerHeight-140)+'px';
+  menu.style.cssText='position:fixed;z-index:9999;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);padding:4px 0;min-width:170px;box-shadow:var(--shadow-deep);';
+
+  let items = '';
+  if (canEdit) items += '<div class="ctx-item" onclick="editPlaylist(\''+plId+'\')">✏️ Edit</div>';
+  items += '<div class="ctx-item" onclick="duplicatePL(\''+plId+'\')">⧉ Duplicate to mine</div>';
+  if (isOwnPersonal) items += '<div class="ctx-item" onclick="sharePL(\''+plId+'\')">⇄ Share with all hosts</div>';
+  if (canEdit) {
+    items += '<div class="ctx-divider"></div>';
+    items += '<div class="ctx-item ctx-danger" onclick="deletePL(\''+plId+'\')">✕ Delete</div>';
+  }
+  menu.innerHTML = items;
+  menu.style.left=Math.min(e.clientX,window.innerWidth-190)+'px';
+  menu.style.top=Math.min(e.clientY,window.innerHeight-160)+'px';
   document.body.appendChild(menu);
   setTimeout(()=>document.addEventListener('click',closePLMenu,{once:true}),0);
 }
@@ -2421,21 +2569,59 @@ function renamePL(id) {
   toast('Renamed to "'+pl.name+'"');
 }
 
-function duplicatePL(id) {
+async function duplicatePL(id) {
   closePLMenu();
   const pl=S.playlists.find(p=>p.id===id); if(!pl) return;
   const copy=JSON.parse(JSON.stringify(pl));
-  copy.name=pl.name+' (copy)'; copy.id='loc_'+Date.now(); copy.created=new Date().toISOString();
-  S.playlists.push(copy); savePL(copy); renderSidePlaylists();
-  toast('Duplicated as "'+copy.name+'"');
+  copy.name=pl.name+' (copy)';
+  copy.created=new Date().toISOString();
+  copy.scope='personal';
+  copy.owner=S.user.username;
+  delete copy.id;
+  if (db) {
+    try {
+      const { scope:_s, id:_id, ...forDb } = copy;
+      const r = db.ref('player/users/' + S.user.username + '/playlists').push();
+      await r.set(forDb);
+      copy.id = r.key;
+    } catch(e){ copy.id='loc_'+Date.now(); }
+  } else { copy.id='loc_'+Date.now(); }
+  S.playlists.push(copy);
+  try { localStorage.setItem('bella_playlists', JSON.stringify(S.playlists)); } catch(e){}
+  renderSidePlaylists();
+  toast('Duplicated to My Playlists as "'+copy.name+'"');
+}
+
+// Publish a personal playlist to the Shared section for all hosts to see
+async function sharePL(id) {
+  closePLMenu();
+  const pl=S.playlists.find(p=>p.id===id); if(!pl) return;
+  if (pl.scope !== 'personal' || pl.owner !== S.user.username) { toast('Only your own playlists can be shared'); return; }
+  if (!confirm('Share "'+pl.name+'" with all hosts? They\'ll be able to view and duplicate it.')) return;
+  const copy = JSON.parse(JSON.stringify(pl));
+  copy.scope='shared';
+  copy.sharedBy = S.user.name || S.user.username;
+  delete copy.id;
+  if (db) {
+    try {
+      const { scope:_s, id:_id, ...forDb } = copy;
+      const r = db.ref('player/shared_playlists').push();
+      await r.set(forDb);
+      copy.id = r.key;
+    } catch(e){ toast('Could not share — try again'); return; }
+  } else { toast('Connect Firebase to share playlists'); return; }
+  S.playlists.push(copy);
+  renderSidePlaylists();
+  toast('"'+pl.name+'" shared with all hosts');
 }
 
 async function deletePL(id) {
   closePLMenu();
   const pl=S.playlists.find(p=>p.id===id); if(!pl) return;
+  if (!plCanEdit(pl)) { toast("You don't have permission to delete this playlist"); return; }
   if(!confirm('Delete "'+pl.name+'"? This cannot be undone.')) return;
   S.playlists=S.playlists.filter(p=>p.id!==id);
-  if(db){ try{ await db.ref('player/playlists/'+id).remove(); }catch(e){} }
+  if(db){ try{ await db.ref(plDbPath(pl)).remove(); }catch(e){} }
   try{ localStorage.setItem('bella_playlists',JSON.stringify(S.playlists)); }catch(e){}
   if(S.currentPL?.id===id){ S.currentPL=null; S.track=null; S.trackIdx=-1; document.getElementById('pl-title').textContent='Select a Playlist'; document.getElementById('pl-meta').textContent='Choose a playlist from the sidebar'; document.getElementById('pl-controls').style.display='none'; document.getElementById('track-list-wrap').innerHTML=''; }
   renderSidePlaylists(); toast('Playlist deleted');
@@ -2718,8 +2904,10 @@ function renderTrackList() {
   applyColWidths();
   wireColResize('track-head');
 
-  // Wire up drag handles
+  // Wire up drag handles — only if this playlist is editable by the current user
+  const canEditCurrentPL = plCanEdit(S.currentPL);
   document.querySelectorAll('.track-row[draggable]').forEach(row => {
+    if (!canEditCurrentPL) { row.setAttribute('draggable', 'false'); return; }
     row.addEventListener('dragstart', e => {
       dragSrcIdx = parseInt(row.dataset.origIdx);
       row.classList.add('dragging');
@@ -2749,7 +2937,8 @@ function renderTrackList() {
 function renderRow(t, displayIdx, origIdx) {
   const i = origIdx !== undefined ? origIdx : displayIdx;
   const playing = S.trackIdx===i;
-  const cues = S.cuePoints[t.id]||{};
+  const cues = getEffectiveCue(t.id);
+  const hasOverride = !!S.cueOverrides[t.id];
   const hasBingo = !!cues.bingo;
   const hasTriviaS = !!cues.triviaS;
   const hasTriviaE = !!cues.triviaE;
@@ -2757,6 +2946,7 @@ function renderRow(t, displayIdx, origIdx) {
     '<div class="cue-dot '+(hasBingo?'bingo':'')+'" title="Bingo cue"></div>' +
     '<div class="cue-dot '+(hasTriviaS?'trivia-s':'')+'" title="Trivia start"></div>' +
     '<div class="cue-dot '+(hasTriviaE?'trivia-e':'')+'" title="Trivia end"></div>' +
+    (hasOverride ? '<span style="font-size:9px;color:var(--gold2);margin-left:4px;font-style:italic;">· yours</span>' : '') +
   '</div>';
 
   const isSel = isRowSelected('playlist', t.id);
@@ -2773,7 +2963,7 @@ function renderRow(t, displayIdx, origIdx) {
     '<div class="t-bpm">'+(t.bpm?Math.round(t.bpm):'—')+'</div>' +
     '<div class="t-dur">'+fmt(t.duration||0)+'</div>' +
     '<div class="t-actions">' +
-      (S.isAdmin?'<button class="t-btn" onclick="openCueEditor(\''+t.id+'\','+i+')" title="Edit cue points">🎯</button>':'') +
+      '<button class="t-btn'+(hasOverride?' cue-set':'')+'" onclick="openCueEditor(\''+t.id+'\','+i+')" title="Edit cue points">🎯</button>' +
       (S.isAdmin?'<button class="t-btn" onclick="toggleBingo(\''+t.id+'\','+i+')" title="Toggle bingo flag">🎱</button>':'') +
       '<button class="t-menu-btn" onclick="openTrackMenu(event,\''+t.id+'\','+i+',\'playlist\')" title="More options">⋯</button>' +
     '</div>' +
@@ -2784,12 +2974,17 @@ async function createPlaylist() {
   const name = document.getElementById('npl-name').value.trim();
   const type = document.getElementById('npl-type').value;
   const timer = parseInt(document.getElementById('npl-timer').value)||0;
+  const scope = S.isAdmin ? document.getElementById('npl-scope').value : 'personal';
   if (!name) return;
-  const pl = { name, type, timer, tracks:[], owner:S.user.username, shuffle:false, created:new Date().toISOString() };
+  const pl = { name, type, timer, tracks:[], owner:S.user.username, shuffle:false, created:new Date().toISOString(), scope };
   if (db) {
     try {
-      const forDb = { ...pl, tracks: [] }; // new playlist has no tracks yet anyway
-      const r = db.ref('player/playlists').push();
+      const { scope:_s, id:_id, ...forDb } = pl; // path encodes scope, strip before write
+      const basePath = scope === 'admin-bingo' ? 'player/admin_playlists/bingo'
+                      : scope === 'admin-belladonna' ? 'player/admin_playlists/belladonna'
+                      : scope === 'shared' ? 'player/shared_playlists'
+                      : 'player/users/' + S.user.username + '/playlists';
+      const r = db.ref(basePath).push();
       await r.set(forDb);
       pl.id = r.key;
     } catch(e){ console.warn('createPlaylist Firebase error:', e.message); }
@@ -2804,13 +2999,15 @@ async function createPlaylist() {
 
 async function savePL(pl) {
   if (!pl?.id) return;
+  if (!plCanEdit(pl)) { toast("You don't have permission to edit this playlist"); return; }
   if (db) {
     try {
-      // Strip artUrl before saving — it can be large and isn't needed in the DB
-      const forDb = { ...pl, tracks: (pl.tracks||[]).map(t => {
-        const { artUrl, ...rest } = t; return rest;
+      // Strip artUrl + scope/id before saving — scope/id are implied by path, artUrl is cached locally
+      const { scope, id, ...rest } = pl;
+      const forDb = { ...rest, tracks: (pl.tracks||[]).map(t => {
+        const { artUrl, ...trest } = t; return trest;
       })};
-      await db.ref('player/playlists/' + pl.id).set(forDb);
+      await db.ref(plDbPath(pl)).set(forDb);
     } catch(e){ console.warn('savePL Firebase error:', e.message); }
   }
   // Always save full version (with artUrl) to localStorage as local backup
@@ -2822,6 +3019,7 @@ async function savePL(pl) {
 function removeTrack(i) {
   if (!S.currentPL?.tracks) return;
   if (S.currentPL.id === '__library__') { toast('Switch to a real playlist to remove tracks'); return; }
+  if (!plCanEdit(S.currentPL)) { toast("You don't have permission to edit this playlist"); return; }
   S.currentPL.tracks.splice(i,1);
   if (S.trackIdx===i) { S.trackIdx=-1; S.track=null; }
   else if (S.trackIdx>i) S.trackIdx--;
@@ -3304,6 +3502,7 @@ function renderLibrary() {
 
 function addToCurrentPL(id) {
   if(!S.currentPL || S.currentPL.id === '__library__'){toast('Select a playlist first');return;}
+  if(!plCanEdit(S.currentPL)){toast("You don't have permission to edit this playlist");return;}
   const t=S.library.find(t=>t.id===id);
   if(!t) return;
   if(!S.currentPL.tracks) S.currentPL.tracks=[];
@@ -3347,7 +3546,7 @@ async function playFromLibrary(id) {
   S.trackIdx = idx >= 0 ? idx : 0;
   S.track = t;
 
-  const cues = S.cuePoints[t.id] || {};
+  const cues = getEffectiveCue(t.id);
   const startTime = cues.bingo || 0;
 
   if (S.isPlaying && S.fadeMode === 'crossfade') {
@@ -3379,7 +3578,7 @@ async function playAt(idx) {
 
   const isBingo = pl.type==='bingo'||t.bingoFlag;
   const isTrivia = t.triviaFlag;
-  const cues=S.cuePoints[t.id]||{};
+  const cues=getEffectiveCue(t.id);
   const startTime = isTrivia ? (cues.triviaS||0) : isBingo ? (cues.bingo||0) : 0;
   const endTime = isTrivia ? (cues.triviaE||t.duration||0) : 0;
 
@@ -3817,31 +4016,54 @@ function updateJukebox(t) {
 }
 
 // ═══════════════ CUE POINTS ═══════════════
-let editId=null, editDur=0;
+let editId=null, editDur=0, editUsingOverride=false;
 const tempCues={bingo:null,triviaS:null,triviaE:null};
+
+// Returns the cue points that actually apply for THIS host on a given track:
+// personal override if they have one, otherwise the global default.
+function getEffectiveCue(trackId) {
+  if (S.cueOverrides[trackId]) return S.cueOverrides[trackId];
+  return S.cuePoints[trackId] || {};
+}
 
 async function loadCuePoints() {
   if(!db) return;
   try {
-    const snap=await db.ref('player/cuepoints').once('value');
-    const data=snap.val()||{};
+    const [globalSnap, mineSnap] = await Promise.all([
+      db.ref('player/cuepoints').once('value'),
+      db.ref('player/users/' + S.user.username + '/cue_overrides').once('value')
+    ]);
+    const data=globalSnap.val()||{};
     Object.entries(data).forEach(([id,v])=>{S.cuePoints[id]=v;});
+    const mine=mineSnap.val()||{};
+    Object.entries(mine).forEach(([id,v])=>{S.cueOverrides[id]=v;});
   } catch(e){}
 }
 
 function openCueEditor(id, idx) {
-  if(!S.isAdmin) return;
   const t=S.currentPL?.tracks?.[idx]; if(!t) return;
   editId=id; editDur=t.duration||180;
-  const c=S.cuePoints[id]||{};
+  // If this host already has a personal override on this track, edit that; otherwise edit the global default
+  const hasOverride = !!S.cueOverrides[id];
+  editUsingOverride = hasOverride;
+  const c = hasOverride ? S.cueOverrides[id] : (S.cuePoints[id]||{});
   tempCues.bingo=c.bingo||null;
   tempCues.triviaS=c.triviaS||null;
   tempCues.triviaE=c.triviaE||null;
   document.getElementById('cue-track-name').textContent=`${t.title} — ${t.artist}`;
   document.getElementById('ctot').textContent=fmt(editDur);
   document.getElementById('ctot2').textContent=fmt(editDur);
+  document.getElementById('tog-cue-override').classList.toggle('on', hasOverride);
+  updateCueOverrideLabel();
   updateCueBars();
   openModal('modal-cue');
+}
+
+function updateCueOverrideLabel() {
+  const on = document.getElementById('tog-cue-override').classList.contains('on');
+  document.getElementById('cue-override-sub').textContent = on
+    ? "Saves just for you — won't change this song for other hosts"
+    : (S.isAdmin ? "Saves as the global default for everyone" : "You don't have an override here — turn this on to set your own");
 }
 
 function setCue(type, e) {
@@ -3880,28 +4102,56 @@ async function saveCues() {
   if(tempCues.bingo!=null) data.bingo=tempCues.bingo;
   if(tempCues.triviaS!=null) data.triviaS=tempCues.triviaS;
   if(tempCues.triviaE!=null) data.triviaE=tempCues.triviaE;
-  S.cuePoints[editId]=data;
-  if(db){ try{await db.ref('player/cuepoints/'+editId).set(data);}catch(e){} }
+
+  const wantsOverride = document.getElementById('tog-cue-override').classList.contains('on');
+
+  if (wantsOverride) {
+    // Personal — only affects this host
+    S.cueOverrides[editId]=data;
+    if(db){ try{await db.ref('player/users/'+S.user.username+'/cue_overrides/'+editId).set(data);}catch(e){} }
+    toast('Saved — just for you ✓');
+  } else {
+    // Global default — affects everyone without their own override
+    S.cuePoints[editId]=data;
+    if(db){ try{await db.ref('player/cuepoints/'+editId).set(data);}catch(e){} }
+    toast('Cue points saved for everyone ✓');
+  }
   closeModal('modal-cue');
   renderTrackList();
-  toast('Cue points saved ✓');
 }
 
 async function clearCues() {
   if(!editId) return;
-  delete S.cuePoints[editId];
-  if(db){ try{await db.ref('player/cuepoints/'+editId).remove();}catch(e){} }
+  const wasOverride = document.getElementById('tog-cue-override').classList.contains('on');
+  if (wasOverride) {
+    delete S.cueOverrides[editId];
+    if(db){ try{await db.ref('player/users/'+S.user.username+'/cue_overrides/'+editId).remove();}catch(e){} }
+    toast('Your personal cue removed — back to the global default');
+  } else {
+    delete S.cuePoints[editId];
+    if(db){ try{await db.ref('player/cuepoints/'+editId).remove();}catch(e){} }
+    toast('Global cue points cleared');
+  }
   closeModal('modal-cue');
   renderTrackList();
-  toast('Cue points cleared');
 }
 
-// ═══════════════ SETTINGS ═══════════════
+// ═══════════════ SETTINGS (per-host, seeded from admin defaults) ═══════════════
 async function loadSettings() {
   if(!db) return;
   try {
-    const s=await db.ref('player/settings/playback').once('value');
-    if(s.exists()) { Object.assign(S.settings,s.val()); applySettings(); }
+    // Does this host already have their own saved settings?
+    const mine = await db.ref('player/users/' + S.user.username + '/settings/playback').once('value');
+    if (mine.exists()) {
+      Object.assign(S.settings, mine.val());
+      applySettings();
+      return;
+    }
+    // First time for this host — seed from admin's global defaults, then save as theirs
+    const def = await db.ref('player/settings/playback_default').once('value');
+    if (def.exists()) Object.assign(S.settings, def.val());
+    applySettings();
+    await db.ref('player/users/' + S.user.username + '/settings/playback').set(S.settings);
   } catch(e){}
 }
 
@@ -3914,27 +4164,41 @@ function applySettings() {
   document.getElementById('tog-cleanskip')?.classList.toggle('on',s.cleanSkip);
 }
 
+// Every host's settings are their own — saved under their username, never shared
 async function saveSetting(k, v) {
   v=parseFloat(v);
   if(k==='crossfade'){S.settings.crossfade=v;document.getElementById('val-xfade').textContent=v+'s';}
   if(k==='timer'){S.settings.timer=v;document.getElementById('val-timer').textContent=v?v+'s':'Off';}
-  if(db){ try{await db.ref('player/settings/playback').set(S.settings);}catch(e){} }
+  if(db){ try{await db.ref('player/users/' + S.user.username + '/settings/playback').set(S.settings);}catch(e){} }
 }
 
 async function toggleSetting(k) {
-  if(!S.isAdmin) return;
   S.settings[k]=!S.settings[k];
   applySettings();
-  if(db){ try{await db.ref('player/settings/playback').set(S.settings);}catch(e){} }
+  if(db){ try{await db.ref('player/users/' + S.user.username + '/settings/playback').set(S.settings);}catch(e){} }
+}
+
+// Admin-only: change the DEFAULT new hosts get seeded with (does not touch existing hosts' own settings)
+async function saveDefaultSetting(k, v) {
+  if (!S.isAdmin) return;
+  if (!db) return;
+  try {
+    const snap = await db.ref('player/settings/playback_default').once('value');
+    const cur = snap.val() || { crossfade:8, timer:0, bpmMatch:true, cleanSkip:true };
+    cur[k] = v;
+    await db.ref('player/settings/playback_default').set(cur);
+    toast('Default updated — applies to new hosts only');
+  } catch(e){}
 }
 
 // ═══════════════ ADMIN ═══════════════
 async function loadAdminData() {
   if(!db) return;
   try {
-    const [sSnap, uSnap] = await Promise.all([
+    const [sSnap, uSnap, defSnap] = await Promise.all([
       db.ref('player/sessions').once('value'),
-      db.ref('player/users').once('value')
+      db.ref('player/users').once('value'),
+      db.ref('player/settings/playback_default').once('value')
     ]);
     const all_sessions = Object.values(sSnap.val()||{});
     const active_sessions = all_sessions.filter(s=>s.status==='active');
@@ -3949,7 +4213,53 @@ async function loadAdminData() {
     const filter=document.getElementById('log-filter');
     const names=[...new Set(recent.map(s=>s.displayName))];
     filter.innerHTML='<option value="">All Users</option>'+names.map(n=>`<option value="${n}">${n}</option>`).join('');
+
+    // Populate default-settings controls
+    const def = defSnap.val() || { crossfade:8, timer:0, bpmMatch:true, cleanSkip:true };
+    const dxe=document.getElementById('def-xfade'), dte=document.getElementById('def-timer');
+    if(dxe){ dxe.value=def.crossfade; document.getElementById('val-def-xfade').textContent=def.crossfade+'s'; }
+    if(dte){ dte.value=def.timer; document.getElementById('val-def-timer').textContent=def.timer?def.timer+'s':'Off'; }
+    document.getElementById('tog-def-bpm')?.classList.toggle('on', def.bpmMatch!==false);
+    document.getElementById('tog-def-cleanskip')?.classList.toggle('on', def.cleanSkip!==false);
+
+    loadCueOverridesPanel(users);
   } catch(e){ console.error(e); }
+}
+
+// Show admin which hosts have set a personal override that differs from the global cue default
+async function loadCueOverridesPanel(users) {
+  const el = document.getElementById('adm-cue-overrides');
+  if (!el || !db) return;
+  try {
+    const snaps = await Promise.all(
+      users.map(u => db.ref('player/users/' + u.id + '/cue_overrides').once('value'))
+    );
+    const rows = [];
+    users.forEach((u, idx) => {
+      const overrides = snaps[idx].val();
+      if (!overrides) return;
+      Object.entries(overrides).forEach(([trackId, cue]) => {
+        const track = S.library.find(t => t.id === trackId);
+        const trackName = track ? (track.title + ' — ' + track.artist) : trackId;
+        const globalCue = S.cuePoints[trackId] || {};
+        const parts = [];
+        if (cue.bingo != null)   parts.push('Bingo: '+fmt(cue.bingo)+(globalCue.bingo!=null?' (global: '+fmt(globalCue.bingo)+')':''));
+        if (cue.triviaS != null) parts.push('Trivia start: '+fmt(cue.triviaS));
+        if (cue.triviaE != null) parts.push('Trivia end: '+fmt(cue.triviaE));
+        rows.push({ host:u.name||u.id, trackName, detail:parts.join(' · ') });
+      });
+    });
+    if (!rows.length) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;font-style:italic;">No overrides set by any host yet</div>';
+      return;
+    }
+    el.innerHTML = rows.map(r =>
+      '<div style="padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;">'+
+        '<div style="font-family:var(--font-heading);">'+esc(r.host)+' <span style="color:var(--text3);font-weight:normal;font-style:italic;">prefers a different cue on</span> '+esc(r.trackName)+'</div>'+
+        '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;font-style:italic;">'+esc(r.detail)+'</div>'+
+      '</div>'
+    ).join('');
+  } catch(e){ console.warn('loadCueOverridesPanel error:', e.message); }
 }
 
 function renderActiveSessions(sessions) {

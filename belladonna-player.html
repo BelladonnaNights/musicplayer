@@ -2946,8 +2946,9 @@ async function loadMetaCache() {
   metaCacheLoaded = true;
   if (!db) return;
   try {
-    const snap = await db.collection('library_meta').get();
-    snap.forEach(doc => { metaCache[doc.id] = doc.data(); });
+    const snap = await db.ref('player/library_meta').once('value');
+    const val = snap.val();
+    if (val) metaCache = val;
   } catch(e) { console.warn('Could not load metadata cache:', e); }
 }
 
@@ -2962,14 +2963,12 @@ function queueMetaSave(id, data) {
   metaWriteTimer = setTimeout(flushMetaWrites, 1500);
 }
 async function flushMetaWrites() {
-  const batch = db.batch();
   const ids = Object.keys(metaWriteQueue);
   if (!ids.length) return;
-  ids.forEach(id => {
-    batch.set(db.collection('library_meta').doc(id), metaWriteQueue[id]);
-  });
+  const updates = {};
+  ids.forEach(id => { updates['player/library_meta/' + id] = metaWriteQueue[id]; });
   metaWriteQueue = {};
-  try { await batch.commit(); } catch(e) { console.warn('Metadata batch write failed:', e); }
+  try { await db.ref().update(updates); } catch(e) { console.warn('Metadata batch write failed:', e); }
 }
 
 // ── Phase 1: instant scan — filenames + sizes only, no file reads ──

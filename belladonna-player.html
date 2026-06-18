@@ -2412,6 +2412,9 @@ function enterApp() {
 
   showView('library'); // land on Library by default
 
+  // Always try to restore folder — delay slightly so DOM is ready
+  setTimeout(tryRestoreFolder, 300);
+
   // Bingo bridge setup
   loadBingoCategories().then(() => {
     if (S.bingoCategoryId) {
@@ -3249,7 +3252,12 @@ async function tryRestoreFolder() {
 }
 
 function showReconnectBanner(handle) {
-  const lib = document.getElementById('lib-list');
+  // Wait until library view is in DOM
+  let lib = document.getElementById('lib-list');
+  if (!lib) {
+    // Insert banner at top of library view scroll area instead
+    lib = document.querySelector('#view-library .view-scroll');
+  }
   if (!lib) return;
   const banner = document.createElement('div');
   banner.id = 'reconnect-banner';
@@ -4783,14 +4791,18 @@ function runBulkMatch() {
     }
     const nt = normBulk(title), na = normBulk(artist);
 
-    // Try to match in library
+    // Try to match in library — strictest first
     let track = null;
-    // Exact title + artist
+    // 1. Exact title + exact artist
     if (na) track = S.library.find(t => normBulk(t.title)===nt && normBulk(t.artist||'')===na);
-    // Title only exact
+    // 2. Exact title + artist starts-with (handles "feat." truncation)
+    if (!track && na) track = S.library.find(t => normBulk(t.title)===nt && normBulk(t.artist||'').startsWith(na));
+    // 3. Exact title only (no artist provided or artist didn't match)
     if (!track) track = S.library.find(t => normBulk(t.title)===nt);
-    // Title contains
-    if (!track) track = S.library.find(t => normBulk(t.title).includes(nt) || nt.includes(normBulk(t.title)));
+    // 4. Substring only if search title is 4+ words (avoids "Fire" → "Firework")
+    if (!track && nt.split(' ').length >= 4) {
+      track = S.library.find(t => normBulk(t.title).includes(nt));
+    }
 
     const status = !track ? 'not-found'
                  : inPL.has(track.id) ? 'already-in'
@@ -4835,15 +4847,102 @@ function renderBulkResults() {
       ? `<span style="color:var(--text2)">${esc(m.track.title)}</span> <span style="color:var(--text3);font-size:11px;">– ${esc(m.track.artist||'')} (already added)</span>`
       : `<span style="color:#e06060">${esc(m.line)}</span> <span style="color:var(--text3);font-size:11px;">(not found in library)</span>`;
 
-    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;margin-bottom:4px;background:${bg};border:.5px solid ${border};border-radius:var(--radius);">
-      <span style="font-size:11px;min-width:18px;text-align:center;">${i+1}</span>
+    // Unmatch / manual search controls
+    const unmatchBtn = (m.status==='matched'||m.status==='already-in') && m.track
+      ? `<button onclick="bulkUnmatch(${i})" style="background:none;border:.5px solid var(--border2);border-radius:var(--radius);padding:2px 7px;font-size:10px;color:var(--text3);cursor:pointer;white-space:nowrap;font-family:var(--font-heading);letter-spacing:.04em;" title="Unmatch — search manually">✕ unmatch</button>`
+      : `<button onclick="bulkManualSearch(${i})" style="background:none;border:.5px solid var(--border2);border-radius:var(--radius);padding:2px 7px;font-size:10px;color:var(--text3);cursor:pointer;white-space:nowrap;font-family:var(--font-heading);letter-spacing:.04em;" title="Search library for this song">🔍 find</button>`;
+
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;margin-bottom:4px;background:${bg};border:.5px solid ${border};border-radius:var(--radius);">
+      <span style="font-size:11px;min-width:18px;text-align:center;flex-shrink:0;">${i+1}</span>
       ${icon}
-      <span style="flex:1;font-size:12px;font-family:var(--font-heading);letter-spacing:.03em;">${label}</span>
+      <span style="flex:1;font-size:12px;font-family:var(--font-heading);letter-spacing:.03em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${label}</span>
+      ${unmatchBtn}
     </div>`;
   }).join('');
 
   res.innerHTML = summary + rows;
   document.getElementById('bulk-add-btn').style.display = matched ? '' : 'none';
+}
+
+function bulkUnmatch(idx) {
+  const m = _bulkMatches[idx];
+  if (!m) return;
+  m.track = null;
+  m.status = 'not-found';
+  if (S.currentPL) {
+    _bulkStateByPL[S.currentPL.id] = { rawText: document.getElementById('bulk-input').value, matches: _bulkMatches };
+    updateBulkMissingBadge();
+  }
+  renderBulkResults();
+}
+
+function bulkManualSearch(idx) {
+  const m = _bulkMatches[idx];
+  if (!m) return;
+  // Show a mini search dropdown for this row
+  const container = document.getElementById('bulk-results');
+  const rows = container.querySelectorAll('[data-bulk-idx]');
+  // Close any open search
+  const old = document.getElementById('bulk-search-popup'); if (old) old.remove();
+
+  const q = (m.title + ' ' + m.artist).trim().toLowerCase();
+  const results = S.library.filter(t =>
+    (t.title||'').toLowerCase().includes(m.title.toLowerCase()) ||
+    (t.artist||'').toLowerCase().includes(m.artist.toLowerCase())
+  ).slice(0, 8);
+
+  const popup = document.createElement('div');
+  popup.id = 'bulk-search-popup';
+  popup.style.cssText = 'position:fixed;z-index:9999;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);padding:4px 0;min-width:300px;max-height:260px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.7);';
+
+  const header = '<div style="padding:6px 12px 4px;font-size:9px;font-family:var(--font-heading);letter-spacing:.1em;text-transform:uppercase;color:var(--text3);">Choose match for: '+esc(m.line)+'</div>';
+  const searchBox = '<div style="padding:4px 8px;"><input id="bulk-manual-q" placeholder="Search…" autocomplete="off" style="width:100%;background:var(--surface3);border:1px solid var(--border2);border-radius:var(--radius);padding:6px 8px;color:var(--text);font-size:12px;outline:none;box-sizing:border-box;" oninput="bulkManualFilter('+idx+',this.value)"></div>';
+  const items = results.length
+    ? results.map(t => '<div class="ctx-item" onclick="bulkAssign('+idx+',\x27'+t.id+'\x27)"><span style="color:var(--text);">'+esc(t.title)+'</span> <span style="color:var(--text3);font-size:11px;">\u2013 '+esc(t.artist||'')+'</span></div>').join('')
+    : '<div style="padding:8px 12px;font-size:12px;color:var(--text3);font-style:italic;">No matches — type to search</div>';
+  popup.innerHTML = header + searchBox + '<div id="bulk-manual-results">'+items+'</div>';
+
+  // Position near the row (use mouse position)
+  popup.style.left = Math.min(window._lastX||400, window.innerWidth-320)+'px';
+  popup.style.top  = Math.min(window._lastY||200, window.innerHeight-280)+'px';
+  document.body.appendChild(popup);
+  setTimeout(()=>{ document.getElementById('bulk-manual-q')?.focus(); document.addEventListener('click',closeBulkSearch,{once:true}); },0);
+}
+
+function closeBulkSearch(e) {
+  const p = document.getElementById('bulk-search-popup');
+  if (p && !p.contains(e?.target)) p.remove();
+}
+
+function bulkManualFilter(idx, q) {
+  const m = _bulkMatches[idx];
+  if (!m) return;
+  const ql = q.toLowerCase();
+  const results = S.library.filter(t =>
+    (t.title||'').toLowerCase().includes(ql) ||
+    (t.artist||'').toLowerCase().includes(ql)
+  ).slice(0, 10);
+  const res = document.getElementById('bulk-manual-results');
+  if (!res) return;
+  res.innerHTML = results.length
+    ? results.map(t => '<div class="ctx-item" onclick="bulkAssign('+idx+',\x27'+t.id+'\x27)"><span style="color:var(--text);">'+esc(t.title)+'</span> <span style="color:var(--text3);font-size:11px;">\u2013 '+esc(t.artist||'')+'</span></div>').join('')
+    : '<div style="padding:8px 12px;font-size:12px;color:var(--text3);font-style:italic;">No matches</div>';
+}
+
+function bulkAssign(idx, trackId) {
+  document.getElementById('bulk-search-popup')?.remove();
+  const track = S.library.find(t=>t.id===trackId);
+  if (!track) return;
+  const m = _bulkMatches[idx];
+  if (!m) return;
+  m.track = track;
+  const inPL = new Set((S.currentPL?.tracks||[]).map(t=>t.id));
+  m.status = inPL.has(track.id) ? 'already-in' : 'matched';
+  if (S.currentPL) {
+    _bulkStateByPL[S.currentPL.id] = { rawText: document.getElementById('bulk-input').value, matches: _bulkMatches };
+    updateBulkMissingBadge();
+  }
+  renderBulkResults();
 }
 
 function confirmBulkAdd() {

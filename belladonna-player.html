@@ -1740,6 +1740,7 @@ html, body {
                 <button class="btn-sm" id="btn-mode" onclick="event.stopPropagation();toggleFadeMenu()">↔ Crossfade ▾</button>
                 <div class="col-add-menu" id="fade-mode-menu" style="min-width:180px;"></div>
               </div>
+              <button class="btn-sm" onclick="openBulkAdd()" title="Bulk add songs from a list">＋ Bulk Add</button>
             </div>
           </div>
           <div class="sort-bar" id="pl-sort-bar" style="display:none;">
@@ -2073,6 +2074,25 @@ html, body {
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeModal('modal-edit-track')">Cancel</button>
       <button class="btn-save" onclick="saveTrackEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Add Modal -->
+<div class="overlay" id="modal-bulk-add">
+  <div class="modal" style="width:min(640px,95vw);max-height:85vh;display:flex;flex-direction:column;">
+    <div class="modal-title">Bulk Add Songs</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:10px;font-family:var(--serif);font-style:italic;">
+      Paste a list of songs — one per line — in the format: <strong style="color:var(--text2);font-style:normal;">Title – Artist</strong>
+    </div>
+    <textarea id="bulk-input" placeholder="Sweet Emotion – Aerosmith&#10;Walk This Way – Aerosmith&#10;Dreams – Fleetwood Mac"
+      style="width:100%;height:120px;resize:vertical;background:var(--surface3);border:1px solid var(--border2);border-radius:var(--radius);padding:10px;font-family:var(--serif);font-size:13px;color:var(--text);outline:none;margin-bottom:12px;"></textarea>
+    <button class="btn-save" onclick="runBulkMatch()" style="margin-bottom:14px;">🔍 Match Songs</button>
+    <div id="bulk-results" style="flex:1;overflow-y:auto;min-height:0;"></div>
+    <div class="modal-actions" style="margin-top:12px;">
+      <button class="btn-ghost" onclick="closeModal('modal-bulk-add')">Close</button>
+      <button class="btn-sm" onclick="runBulkMatch()" title="Re-check against library">↺ Check Again</button>
+      <button class="btn-save" id="bulk-add-btn" onclick="confirmBulkAdd()" style="display:none;">Add Matched Songs</button>
     </div>
   </div>
 </div>
@@ -4421,6 +4441,121 @@ function fmt(s) {
 }
 function esc(s){if(!s)return'';return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function toast(msg,dur=2500){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
+// ── BULK ADD ──────────────────────────────────────────────────────────────────
+let _bulkMatches = []; // { line, title, artist, track|null, status }
+
+function openBulkAdd() {
+  if (!S.currentPL) { toast('Select a playlist first'); return; }
+  document.getElementById('bulk-results').innerHTML = '';
+  document.getElementById('bulk-add-btn').style.display = 'none';
+  _bulkMatches = [];
+  openModal('modal-bulk-add');
+}
+
+function normBulk(s) {
+  return s.toLowerCase()
+    .replace(/^(the|a|an)\s+/,'')
+    .replace(/[‘’`´ʼ]/g,"'")
+    .replace(/[^a-z0-9'\s]/g,'')
+    .replace(/\s+/g,' ').trim();
+}
+
+function runBulkMatch() {
+  const raw = document.getElementById('bulk-input').value;
+  const lines = raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if (!lines.length) { toast('Paste some songs first'); return; }
+
+  // Already in playlist
+  const inPL = new Set((S.currentPL?.tracks||[]).map(t=>t.id));
+
+  _bulkMatches = lines.map(line => {
+    // Parse "Title – Artist" or "Title - Artist" or just "Title"
+    const sep = line.match(/[–—―\-]{1,2}/);
+    let title = line, artist = '';
+    if (sep) {
+      const idx = line.indexOf(sep[0]);
+      title  = line.slice(0, idx).trim();
+      artist = line.slice(idx + sep[0].length).trim();
+    }
+    const nt = normBulk(title), na = normBulk(artist);
+
+    // Try to match in library
+    let track = null;
+    // Exact title + artist
+    if (na) track = S.library.find(t => normBulk(t.title)===nt && normBulk(t.artist||'')===na);
+    // Title only exact
+    if (!track) track = S.library.find(t => normBulk(t.title)===nt);
+    // Title contains
+    if (!track) track = S.library.find(t => normBulk(t.title).includes(nt) || nt.includes(normBulk(t.title)));
+
+    const status = !track ? 'not-found'
+                 : inPL.has(track.id) ? 'already-in'
+                 : 'matched';
+    return { line, title, artist, track, status };
+  });
+
+  renderBulkResults();
+}
+
+function renderBulkResults() {
+  const res = document.getElementById('bulk-results');
+  const matched = _bulkMatches.filter(m=>m.status==='matched').length;
+  const notFound = _bulkMatches.filter(m=>m.status==='not-found').length;
+  const alreadyIn = _bulkMatches.filter(m=>m.status==='already-in').length;
+
+  const summary = `<div style="margin-bottom:10px;font-size:12px;display:flex;gap:14px;">
+    <span style="color:var(--green-text)">✓ ${matched} matched</span>
+    <span style="color:var(--text3)">◈ ${alreadyIn} already in playlist</span>
+    <span style="color:#e06060">${notFound ? '✗ '+notFound+' not found' : ''}</span>
+  </div>`;
+
+  const rows = _bulkMatches.map((m,i) => {
+    const bg   = m.status==='matched'    ? 'var(--green-bg)'  :
+                 m.status==='already-in' ? 'var(--surface2)'  : 'rgba(200,80,80,.08)';
+    const border = m.status==='matched'  ? 'var(--green-border)' :
+                   m.status==='already-in' ? 'var(--border)'  : 'rgba(200,80,80,.3)';
+    const icon = m.status==='matched'    ? '<span style="color:var(--green-text)">✓</span>' :
+                 m.status==='already-in' ? '<span style="color:var(--text3)">◈</span>' :
+                                           '<span style="color:#e06060">✗</span>';
+    const label = m.status==='matched'
+      ? `<span style="color:var(--green-text);font-weight:600">${esc(m.track.title)}</span> <span style="color:var(--text3);font-size:11px;">– ${esc(m.track.artist||'')}</span>`
+      : m.status==='already-in'
+      ? `<span style="color:var(--text2)">${esc(m.track.title)}</span> <span style="color:var(--text3);font-size:11px;">– ${esc(m.track.artist||'')} (already added)</span>`
+      : `<span style="color:#e06060">${esc(m.line)}</span> <span style="color:var(--text3);font-size:11px;">(not found in library)</span>`;
+
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;margin-bottom:4px;background:${bg};border:.5px solid ${border};border-radius:var(--radius);">
+      <span style="font-size:11px;min-width:18px;text-align:center;">${i+1}</span>
+      ${icon}
+      <span style="flex:1;font-size:12px;font-family:var(--font-heading);letter-spacing:.03em;">${label}</span>
+    </div>`;
+  }).join('');
+
+  res.innerHTML = summary + rows;
+  document.getElementById('bulk-add-btn').style.display = matched ? '' : 'none';
+}
+
+function confirmBulkAdd() {
+  const toAdd = _bulkMatches.filter(m=>m.status==='matched');
+  if (!toAdd.length) return;
+  if (!S.currentPL.tracks) S.currentPL.tracks = [];
+  const inPL = new Set(S.currentPL.tracks.map(t=>t.id));
+  let added = 0;
+  toAdd.forEach(m => {
+    if (!inPL.has(m.track.id)) {
+      S.currentPL.tracks.push({...m.track});
+      inPL.add(m.track.id);
+      added++;
+    }
+  });
+  savePL(S.currentPL);
+  renderTrackList();
+  // Update statuses to "already-in" so re-check reflects additions
+  _bulkMatches.forEach(m=>{ if(m.status==='matched') m.status='already-in'; });
+  renderBulkResults();
+  document.getElementById('bulk-add-btn').style.display = 'none';
+  toast(`Added ${added} song${added!==1?'s':''} to ${S.currentPL.name}`);
+}
+
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
@@ -4671,6 +4806,21 @@ function checkBingoLaunchParam() {
   initBingoDb();
   updateBingoLinkUI();
   toast('◈ Bingo linked!', 3000);
+  console.log('[Bingo bridge] Player linked. Session key:', sessionKey);
+  console.log('[Bingo bridge] Will write to: sessions/'+sessionKey+'/nowPlaying');
+  // Verify bingo app is listening on same path
+  const dbRef = db || S.bingoDb;
+  if (dbRef) {
+    dbRef.ref('sessions/'+sessionKey+'/bingoAppReady').once('value').then(snap=>{
+      const d = snap.val();
+      if (d && d.sessionKey === sessionKey) {
+        console.log('[Bingo bridge] ✓ Bingo app confirmed on same session path');
+      } else {
+        console.warn('[Bingo bridge] ⚠ Bingo app NOT confirmed on this path. Got:', d);
+        console.warn('[Bingo bridge] Player has:', sessionKey, '| Bingo app wrote:', d?.sessionKey);
+      }
+    }).catch(e=>console.warn('[Bingo bridge] Could not verify bingo app path:', e));
+  }
 }
 
 document.addEventListener('mousemove', e => { window._lastX=e.clientX; window._lastY=e.clientY; });

@@ -705,6 +705,35 @@ html, body {
   opacity:1;
 }
 
+.sidebar-search-wrap { padding:8px 12px 4px; position:relative; flex-shrink:0; }
+.sidebar-search-input { width:100%; background:var(--surface2); border:1px solid var(--border2); border-radius:var(--radius); padding:7px 28px 7px 10px; font-size:12px; font-family:var(--font-heading); color:var(--text); outline:none; box-sizing:border-box; transition:border-color .15s; }
+.sidebar-search-input:focus { border-color:var(--gold-border); }
+.sidebar-search-input::placeholder { color:var(--text3); }
+.sidebar-search-clear { position:absolute; right:18px; top:50%; transform:translateY(-40%); background:none; border:none; color:var(--text3); cursor:pointer; font-size:14px; padding:2px 4px; }
+.sidebar-search-clear:hover { color:var(--text); }
+
+/* Playlist grid card */
+.pl-grid-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); overflow:hidden; cursor:pointer; transition:border-color .2s,transform .2s; }
+.pl-grid-card:hover { border-color:var(--gold-border); transform:translateY(-2px); }
+.pl-grid-card.active { border-color:var(--gold-border2); }
+.pl-grid-art { width:100%; aspect-ratio:1; background:var(--surface2); display:flex; align-items:center; justify-content:center; font-size:36px; color:var(--text3); overflow:hidden; }
+.pl-grid-art img { width:100%; height:100%; object-fit:cover; }
+.pl-grid-info { padding:8px 10px; }
+.pl-grid-name { font-family:var(--font-heading); font-size:12px; letter-spacing:.03em; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pl-grid-meta { font-size:11px; color:var(--text3); margin-top:2px; font-family:var(--serif); font-style:italic; }
+
+/* Playlist filter checkmarks */
+.pl-filter-chip { display:inline-flex; align-items:center; gap:5px; padding:5px 12px; background:var(--surface2); border:1px solid var(--border2); border-radius:99px; font-family:var(--font-heading); font-size:10px; letter-spacing:.08em; text-transform:uppercase; cursor:pointer; user-select:none; transition:all .15s; color:var(--text2); }
+.pl-filter-chip.active { background:var(--gold-dim); border-color:var(--gold-border); color:var(--gold2); }
+.pl-filter-chip .chip-check { font-size:12px; }
+
+/* Search result items */
+.search-result-item { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:var(--radius); cursor:pointer; transition:background .15s; margin-bottom:3px; }
+.search-result-item:hover { background:var(--surface2); }
+.search-result-icon { font-size:18px; width:28px; text-align:center; flex-shrink:0; color:var(--text3); }
+.search-result-name { font-family:var(--font-heading); font-size:12px; letter-spacing:.03em; color:var(--text); }
+.search-result-sub { font-size:11px; color:var(--text3); font-family:var(--serif); font-style:italic; }
+
 .sidebar-brand {
   padding:16px 20px 14px;
   border-bottom:1px solid var(--border2);
@@ -1643,6 +1672,10 @@ html, body {
           </div>
         </div>
       </div>
+      <div class="sidebar-search-wrap">
+        <input class="sidebar-search-input" id="sidebar-search" placeholder="Search playlists & songs…" autocomplete="off" oninput="handleSidebarSearch(this.value)">
+        <button class="sidebar-search-clear" id="sidebar-search-clear" onclick="clearSidebarSearch()" style="display:none;">✕</button>
+      </div>
       <div class="sidebar-user">
         <div class="user-avatar" id="s-avatar">?</div>
         <div>
@@ -1653,6 +1686,9 @@ html, body {
       <div class="sidebar-nav">
         <div class="nav-item active" id="nav-player" onclick="showView('player')">
           <span class="nav-icon">♪</span> Now Playing
+        </div>
+        <div class="nav-item" id="nav-playlists" onclick="showView('playlists')">
+          <span class="nav-icon">⊞</span> Playlists
         </div>
         <div class="nav-item" id="nav-library" onclick="showView('library')">
           <span class="nav-icon">◫</span> Library
@@ -1669,7 +1705,9 @@ html, body {
       </div>
       <!-- Scrollable middle section: playlists only -->
       <div class="sidebar-scroll">
-        <div class="sidebar-divider" style="border-top:none;padding-top:6px;">Playlists</div>
+        <div class="sidebar-divider" style="border-top:none;padding-top:6px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding-right:8px;" onclick="showView('playlists')" title="View all playlists">
+          <span>Playlists</span><span style="font-size:10px;color:var(--text3);">⊞</span>
+        </div>
         <div class="sidebar-playlists" id="s-playlists">
           <div style="color:var(--text-ghost);font-size:12px;padding:6px 12px;font-style:italic;">Loading…</div>
         </div>
@@ -1749,6 +1787,33 @@ html, body {
             <input class="search-input" id="pl-search" placeholder="Search in playlist…" oninput="setPlSearch(this.value)" style="max-width:300px;">
           </div>
           <div id="track-list-wrap"></div>
+        </div>
+      </div>
+
+      <!-- Playlists Grid View -->
+      <div class="view" id="view-playlists">
+        <div class="view-scroll">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+            <div class="pl-title">All Playlists</div>
+            <button class="btn-sm" onclick="document.getElementById('npl-scope-field').style.display=S.isAdmin?'block':'none';openModal('modal-new-pl')">+ New</button>
+          </div>
+          <div id="pl-filter-bar" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:center;"></div>
+          <div id="pl-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px;"></div>
+        </div>
+      </div>
+
+      <!-- Search Results View -->
+      <div class="view" id="view-search">
+        <div class="view-scroll">
+          <div class="pl-title" id="search-results-title">Search</div>
+          <div style="margin:10px 0 20px;" id="search-pl-section" style="display:none;">
+            <div style="font-family:var(--font-heading);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">Playlists</div>
+            <div id="search-pl-results"></div>
+          </div>
+          <div id="search-track-section">
+            <div style="font-family:var(--font-heading);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;">Songs in Library</div>
+            <div id="search-track-results"></div>
+          </div>
         </div>
       </div>
 
@@ -1964,10 +2029,7 @@ html, body {
         <option value="admin-belladonna">Belladonna Playlists (admin — visible to all hosts)</option>
       </select>
     </div>
-    <div class="field">
-      <label class="field-label">Per-Playlist Timer Override <span style="font-size:11px;color:var(--text-muted);font-style:italic;">(seconds, 0 = use global default)</span></label>
-      <input class="field-input" id="npl-timer" type="number" min="0" max="600" placeholder="0" value="0">
-    </div>
+
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeModal('modal-new-pl')">Cancel</button>
       <button class="btn-save" onclick="createPlaylist()">Create</button>
@@ -2379,13 +2441,19 @@ function closeSidebar() {
 }
 
 // ═══════════════ VIEWS ═══════════════
+let _prevView = 'library';
 function showView(v) {
+  const prev = document.querySelector('.view.active')?.id?.replace('view-','') || 'library';
+  if (v !== 'search' && v !== 'playlists') _prevView = prev;
   document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  document.getElementById('view-'+v).classList.add('active');
+  const vEl = document.getElementById('view-'+v);
+  if (!vEl) return;
+  vEl.classList.add('active');
   document.getElementById('nav-'+v)?.classList.add('active');
   const cvb = document.getElementById('col-vis-bar');
   if (cvb) cvb.style.display = (v==='player'||v==='library') ? 'flex' : 'none';
+  if (v==='playlists') renderPlaylistsGrid();
 }
 
 // ═══════════════ PLAYLISTS ═══════════════
@@ -3036,7 +3104,7 @@ function renderRow(t, displayIdx, origIdx) {
 async function createPlaylist() {
   const name = document.getElementById('npl-name').value.trim();
   const type = document.getElementById('npl-type').value;
-  const timer = parseInt(document.getElementById('npl-timer').value)||0;
+  const timer = 0; // Timer set via topbar timer button, not at creation
   const scope = S.isAdmin ? document.getElementById('npl-scope').value : 'personal';
   if (!name) return;
   const pl = { name, type, timer, tracks:[], owner:S.user.username, shuffle:false, created:new Date().toISOString(), scope };
@@ -4518,11 +4586,131 @@ function fmt(s) {
 }
 function esc(s){if(!s)return'';return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function toast(msg,dur=2500){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
+// ── SIDEBAR SEARCH ──────────────────────────────────────────────────────────
+let _searchTimer = null;
+function handleSidebarSearch(q) {
+  const clr = document.getElementById('sidebar-search-clear');
+  if (clr) clr.style.display = q.length ? '' : 'none';
+  clearTimeout(_searchTimer);
+  if (!q.trim()) {
+    showView(_prevView);
+    return;
+  }
+  _searchTimer = setTimeout(() => runSidebarSearch(q.trim()), 200);
+}
+function clearSidebarSearch() {
+  document.getElementById('sidebar-search').value = '';
+  document.getElementById('sidebar-search-clear').style.display = 'none';
+  showView(_prevView);
+}
+function runSidebarSearch(q) {
+  const ql = q.toLowerCase();
+  // Search playlists
+  const plMatches = S.playlists.filter(pl =>
+    pl.name.toLowerCase().includes(ql) ||
+    (pl.type||'').toLowerCase().includes(ql)
+  );
+  // Search library tracks
+  const trackMatches = S.library.filter(t =>
+    (t.title||'').toLowerCase().includes(ql) ||
+    (t.artist||'').toLowerCase().includes(ql) ||
+    (t.album||'').toLowerCase().includes(ql)
+  ).slice(0, 30);
+
+  const titleEl = document.getElementById('search-results-title');
+  if (titleEl) titleEl.textContent = 'Results for "' + q + '"';
+
+  const plSec = document.getElementById('search-pl-section');
+  const plRes = document.getElementById('search-pl-results');
+  if (plRes) {
+    if (plMatches.length) {
+      plRes.innerHTML = plMatches.map(pl => `
+        <div class="search-result-item" onclick="selectPL('${pl.id}');clearSidebarSearch()">
+          <span class="search-result-icon">${pl.type==='bingo'?'◈':'♪'}</span>
+          <div><div class="search-result-name">${esc(pl.name)}</div>
+          <div class="search-result-sub">${pl.type==='bingo'?'Bingo':'General'} · ${(pl.tracks||[]).length} tracks</div></div>
+        </div>`).join('');
+      if (plSec) plSec.style.display = '';
+    } else {
+      if (plSec) plSec.style.display = 'none';
+    }
+  }
+
+  const trRes = document.getElementById('search-track-results');
+  if (trRes) {
+    trRes.innerHTML = trackMatches.length
+      ? trackMatches.map(t => `
+          <div class="search-result-item" onclick="playFromLibrary('${t.id}');clearSidebarSearch()">
+            <span class="search-result-icon">🎵</span>
+            <div><div class="search-result-name">${esc(t.title||t.filename||'Unknown')}</div>
+            <div class="search-result-sub">${esc(t.artist||'')}${t.album?' · '+esc(t.album):''}</div></div>
+          </div>`).join('')
+      : '<div style="color:var(--text3);font-size:12px;font-style:italic;padding:6px 0;">No tracks found.</div>';
+  }
+
+  showView('search');
+}
+
+// ── PLAYLISTS GRID VIEW ──────────────────────────────────────────────────────
+// Filter state: which scopes to show (all checked by default)
+let _plFilters = { bingo:true, belladonna:true, shared:true, personal:true };
+
+function renderPlaylistsGrid() {
+  // Build filter bar
+  const filterBar = document.getElementById('pl-filter-bar');
+  const CHIPS = [
+    { key:'bingo',      label:'🎱 Bingo',               scope:'admin-bingo' },
+    { key:'belladonna', label:'◈ Belladonna Playlists', scope:'admin-belladonna' },
+    { key:'shared',     label:'⇄ Shared',               scope:'shared' },
+    { key:'personal',   label:'♪ My Playlists',         scope:'personal' },
+  ];
+  filterBar.innerHTML = CHIPS.map(c => `
+    <div class="pl-filter-chip ${_plFilters[c.key]?'active':''}"
+      onclick="togglePlFilter('${c.key}')"
+      ondblclick="soloPlFilter('${c.key}')"
+      title="Double-click to show only this">
+      <span class="chip-check">${_plFilters[c.key]?'✓':''}</span> ${c.label}
+    </div>`).join('');
+
+  // Filter playlists
+  const visible = S.playlists.filter(pl => {
+    const s = pl.scope || 'personal';
+    if (s === 'admin-bingo')       return _plFilters.bingo;
+    if (s === 'admin-belladonna')  return _plFilters.belladonna;
+    if (s === 'shared')            return _plFilters.shared;
+    return _plFilters.personal;
+  });
+
+  const grid = document.getElementById('pl-grid');
+  const activePLId = S.currentPL?.id;
+  grid.innerHTML = visible.length ? visible.map(pl => {
+    const art = pl.artUrl ? `<img src="${esc(pl.artUrl)}" loading="lazy">` : (pl.type==='bingo' ? '🎱' : '♪');
+    const cnt = (pl.tracks||[]).length;
+    return `<div class="pl-grid-card ${activePLId===pl.id?'active':''}" ondblclick="selectPL('${pl.id}');showView('player')">
+      <div class="pl-grid-art">${pl.artUrl?`<img src="${esc(pl.artUrl)}" loading="lazy">`:(pl.type==='bingo'?'🎱':'♪')}</div>
+      <div class="pl-grid-info">
+        <div class="pl-grid-name">${esc(pl.name)}</div>
+        <div class="pl-grid-meta">${cnt} track${cnt!==1?'s':''} · ${pl.type==='bingo'?'Bingo':'General'}</div>
+      </div>
+    </div>`;
+  }).join('') : '<div style="color:var(--text3);font-family:var(--serif);font-style:italic;padding:20px 0;">No playlists in this category.</div>';
+}
+
+function togglePlFilter(key) {
+  _plFilters[key] = !_plFilters[key];
+  renderPlaylistsGrid();
+}
+function soloPlFilter(key) {
+  Object.keys(_plFilters).forEach(k => _plFilters[k] = (k === key));
+  renderPlaylistsGrid();
+}
+
 // ── BULK ADD ──────────────────────────────────────────────────────────────────
 let _bulkMatches = []; // { line, title, artist, track|null, status }
 
 function openBulkAdd() {
   if (!S.currentPL) { toast('Select a playlist first'); return; }
+  document.getElementById('bulk-input').value = '';
   document.getElementById('bulk-results').innerHTML = '';
   document.getElementById('bulk-add-btn').style.display = 'none';
   _bulkMatches = [];

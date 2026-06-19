@@ -774,13 +774,16 @@ html, body {
   color:var(--text);
   font-size:26px; letter-spacing:.04em; line-height:1;
 }
+.brand-music-player-row {
+  display:flex; align-items:baseline; gap:6px; margin-top:2px;
+}
 .brand-word-music {
   color:var(--gold);
-  font-size:17px; letter-spacing:.18em; line-height:1.1; margin-top:2px;
+  font-size:17px; letter-spacing:.18em; line-height:1.1;
 }
 .brand-word-player {
   color:var(--gold);
-  font-size:17px; letter-spacing:.18em; line-height:1.1; margin-top:0;
+  font-size:17px; letter-spacing:.18em; line-height:1.1;
   font-family:var(--font-display);
 }
 .brand-divider { display:none; }
@@ -1699,8 +1702,10 @@ html, body {
           <img id="sidebar-logo" src="" alt="" class="brand-logo-img" style="display:none;">
           <div class="brand-text-stack">
             <span class="brand-word-bella">BELLADONNA</span>
-            <span class="brand-word-music">MUSIC</span>
-            <span class="brand-word-player">PLAYER</span>
+            <div class="brand-music-player-row">
+              <span class="brand-word-music">MUSIC</span>
+              <span class="brand-word-player">PLAYER</span>
+            </div>
           </div>
         </div>
       </div>
@@ -3642,11 +3647,21 @@ async function fetchArt(artist, title, album) {
   const k=`${artist}|${album||title}`;
   if(S.artCache[k]) return S.artCache[k];
   try {
-    const res=await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(artist+' '+(album||title))}&media=music&limit=1`);
+    // Search with artist+title for accuracy; verify result artist matches
+    const query = artist ? artist+' '+title : title;
+    const res=await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=song&limit=5`);
     const d=await res.json();
-    if(d.results?.[0]?.artworkUrl100) {
-      const url=d.results[0].artworkUrl100.replace('100x100','300x300');
-      S.artCache[k]=url; return url;
+    if(d.results?.length) {
+      // Pick best result: prefer one where artist name matches
+      const normA = artist.toLowerCase().replace(/[^a-z0-9]/g,' ').trim();
+      let best = d.results.find(r =>
+        r.artistName.toLowerCase().replace(/[^a-z0-9]/g,' ').trim().includes(normA) ||
+        normA.includes(r.artistName.toLowerCase().replace(/[^a-z0-9]/g,' ').trim())
+      ) || (artist ? null : d.results[0]); // only use first result if no artist to verify
+      if(best?.artworkUrl100) {
+        const url=best.artworkUrl100.replace('100x100','300x300');
+        S.artCache[k]=url; return url;
+      }
     }
   } catch(e){}
   return null;

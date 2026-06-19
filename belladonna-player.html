@@ -287,6 +287,7 @@ html, body {
   border-radius:var(--radius); align-items:center;
   cursor:pointer; transition:var(--transition);
   border:1px solid transparent;
+  user-select:none;
 }
 .track-row:hover { background:var(--surface2); border-color:var(--border); }
 .track-row.playing { background:var(--gold-dim); border-color:var(--gold-border); }
@@ -2034,6 +2035,10 @@ html, body {
         <option value="bingo">Bingo</option>
       </select>
     </div>
+    <div class="field">
+      <label class="field-label">Cover Image URL <span style="font-size:10px;color:var(--text3);font-style:italic;">(optional — paste an image URL)</span></label>
+      <input class="field-input" id="npl-art" placeholder="https://… or leave blank">
+    </div>
     <div class="field" id="npl-scope-field" style="display:none;">
       <label class="field-label">Where should this live?</label>
       <select class="select-input" id="npl-scope">
@@ -2066,8 +2071,8 @@ html, body {
       </select>
     </div>
     <div class="field">
-      <label class="field-label">Per-Playlist Timer <span style="font-size:11px;color:var(--text-muted);font-style:italic;">(seconds, 0 = global default)</span></label>
-      <input class="field-input" id="epl-timer" type="number" min="0" max="600" placeholder="0">
+      <label class="field-label">Cover Image URL <span style="font-size:10px;color:var(--text3);font-style:italic;">(optional)</span></label>
+      <input class="field-input" id="epl-art" placeholder="https://… or leave blank">
     </div>
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeModal('modal-edit-pl')">Cancel</button>
@@ -2414,6 +2419,7 @@ function enterApp() {
 
   // Always try to restore folder — delay slightly so DOM is ready
   setTimeout(tryRestoreFolder, 300);
+  setTimeout(loadBulkState, 500); // restore bulk add state after library loads
 
   // Bingo bridge setup
   loadBingoCategories().then(() => {
@@ -2658,6 +2664,7 @@ function editPlaylist(id) {
   _editPlId = id;
   document.getElementById('epl-name').value  = pl.name   || '';
   document.getElementById('epl-type').value  = pl.type   || 'general';
+  document.getElementById('epl-art').value   = pl.artUrl || '';
   document.getElementById('epl-timer').value = pl.timer  || 0;
   openModal('modal-edit-pl');
 }
@@ -2668,7 +2675,8 @@ async function savePlaylistEdit() {
   const type  = document.getElementById('epl-type').value;
   const timer = parseInt(document.getElementById('epl-timer').value) || 0;
   if (!name) { toast('Name cannot be empty'); return; }
-  pl.name = name; pl.type = type; pl.timer = timer;
+  const artUrl = (document.getElementById('epl-art')?.value||'').trim();
+  pl.name = name; pl.type = type; if (artUrl) pl.artUrl = artUrl; else if (artUrl === '') delete pl.artUrl; pl.timer = timer;
   savePL(pl);
   closeModal('modal-edit-pl');
   renderSidePlaylists();
@@ -3055,15 +3063,18 @@ function renderTrackList() {
 
   // Wire up drag handles — only if this playlist is editable by the current user
   const canEditCurrentPL = plCanEdit(S.currentPL);
-  document.querySelectorAll('.track-row[draggable]').forEach(row => {
-    if (!canEditCurrentPL) { row.setAttribute('draggable', 'false'); return; }
-    row.addEventListener('dragstart', e => {
+  // Wire drag from the ⠿ handle cells (not the whole row — prevents click=drag)
+  document.querySelectorAll('.t-num[data-drag-handle]').forEach(handle => {
+    const row = handle.closest('.track-row');
+    if (!row) return;
+    if (!canEditCurrentPL) { handle.setAttribute('draggable', 'false'); return; }
+    handle.addEventListener('dragstart', e => {
       dragSrcIdx = parseInt(row.dataset.displayIdx ?? row.dataset.origIdx);
       dragSrcOrigIdx = parseInt(row.dataset.origIdx);
       row.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
     });
-    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    handle.addEventListener('dragend', () => row.classList.remove('dragging'));
     row.addEventListener('dragover', e => { e.preventDefault(); row.classList.add('drag-over'); });
     row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
     row.addEventListener('drop', e => {
@@ -3113,8 +3124,8 @@ function renderRow(t, displayIdx, origIdx) {
 
   const isSel = isRowSelected('playlist', t.id);
   return '<div class="track-row'+(playing?' playing':'')+(isSel?' selected':'')+'" id="tr-'+i+'" ' +
-    'draggable="true" data-orig-idx="'+i+'" data-display-idx="'+displayIdx+'" onclick="selectRow(\'playlist\',\''+t.id+'\',this)" ondblclick="playAt('+i+')"> ' +
-    '<div class="t-num">'+(playing?'<div class="waveform">'+'<div class="wb"></div>'.repeat(5)+'</div>':'<span style="cursor:grab;opacity:0.4">⠿</span>')+'</div>' +
+    'data-orig-idx="'+i+'" data-display-idx="'+displayIdx+'" onclick="selectRow(\'playlist\',\''+t.id+'\',this)" ondblclick="playAt('+i+')" style="user-select:none"> ' +
+    '<div class="t-num" draggable="true" data-drag-handle="1">'+(playing?'<div class="waveform">'+'<div class="wb"></div>'.repeat(5)+'</div>':'<span style="cursor:grab;opacity:0.4">⠿</span>')+'</div>' +
     '<div class="t-art">'+(t.artUrl?'<img src="'+t.artUrl+'" loading="lazy">':'<div class="t-art-ph">♪</div>')+'</div>' +
     '<div class="t-title-cell">'+esc(t.title||t.filename||'Unknown')+'</div>' +
     '<div class="t-artist-cell">'+esc(t.artist||'')+'</div>' +
@@ -4695,7 +4706,7 @@ function renderPlaylistsGrid() {
     { key:'bingo',      label:'🎱 Bingo',               scope:'admin-bingo' },
     { key:'belladonna', label:'◈ Belladonna Playlists', scope:'admin-belladonna' },
     { key:'shared',     label:'⇄ Shared',               scope:'shared' },
-    { key:'personal',   label:'♪ My Playlists',         scope:'personal' },
+    { key:'personal',   label:'★ My Playlists',         scope:'personal' },
   ];
   filterBar.innerHTML = CHIPS.map(c => `
     <div class="pl-filter-chip ${_plFilters[c.key]?'active':''}"
@@ -4740,7 +4751,44 @@ function soloPlFilter(key) {
 
 // ── BULK ADD ──────────────────────────────────────────────────────────────────
 let _bulkMatches = []; // { line, title, artist, track|null, status }
-const _bulkStateByPL = {}; // plId -> { rawText, matches }
+let _bulkStateByPL = {}; // plId -> { rawText, matches }
+
+function saveBulkState() {
+  try {
+    // Strip track objects down to id only for storage
+    const slim = {};
+    Object.keys(_bulkStateByPL).forEach(plId => {
+      const s = _bulkStateByPL[plId];
+      slim[plId] = {
+        rawText: s.rawText,
+        matches: s.matches.map(m => ({
+          line: m.line, title: m.title, artist: m.artist,
+          status: m.status, trackId: m.track?.id || null
+        }))
+      };
+    });
+    localStorage.setItem('bella_bulk_state', JSON.stringify(slim));
+  } catch(e) {}
+}
+
+function loadBulkState() {
+  try {
+    const raw = localStorage.getItem('bella_bulk_state');
+    if (!raw) return;
+    const slim = JSON.parse(raw);
+    Object.keys(slim).forEach(plId => {
+      const s = slim[plId];
+      _bulkStateByPL[plId] = {
+        rawText: s.rawText,
+        matches: s.matches.map(m => ({
+          line: m.line, title: m.title, artist: m.artist,
+          status: m.status,
+          track: m.trackId ? S.library.find(t => t.id === m.trackId) || null : null
+        }))
+      };
+    });
+  } catch(e) {}
+}
 
 function openBulkAdd() {
   if (!S.currentPL) { toast('Select a playlist first'); return; }
@@ -4816,6 +4864,7 @@ function runBulkMatch() {
       rawText: document.getElementById('bulk-input').value,
       matches: _bulkMatches
     };
+    saveBulkState();
     updateBulkMissingBadge();
   }
   renderBulkResults();
@@ -4871,6 +4920,7 @@ function bulkUnmatch(idx) {
   m.status = 'not-found';
   if (S.currentPL) {
     _bulkStateByPL[S.currentPL.id] = { rawText: document.getElementById('bulk-input').value, matches: _bulkMatches };
+    saveBulkState();
     updateBulkMissingBadge();
   }
   renderBulkResults();
@@ -4940,6 +4990,7 @@ function bulkAssign(idx, trackId) {
   m.status = inPL.has(track.id) ? 'already-in' : 'matched';
   if (S.currentPL) {
     _bulkStateByPL[S.currentPL.id] = { rawText: document.getElementById('bulk-input').value, matches: _bulkMatches };
+    saveBulkState();
     updateBulkMissingBadge();
   }
   renderBulkResults();

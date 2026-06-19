@@ -288,6 +288,8 @@ html, body {
   cursor:pointer; transition:var(--transition);
   border:1px solid transparent;
   user-select:none;
+  position:relative; /* needed for absolute t-actions */
+  overflow:visible;  /* let t-actions float outside grid */
 }
 .track-row:hover { background:var(--surface2); border-color:var(--border); }
 .track-row.playing { background:var(--gold-dim); border-color:var(--gold-border); }
@@ -321,8 +323,25 @@ html, body {
 .t-bpm { font-size:12px; color:var(--text3); text-align:center; }
 .t-dur { font-size:12px; color:var(--text3); text-align:right; }
 
-.t-actions { display:flex; align-items:center; gap:4px; justify-content:flex-end; position:relative; z-index:2; }
-.t-menu-btn { position:relative; z-index:3; }
+.t-actions {
+  position:absolute;
+  right:6px;
+  top:50%;
+  transform:translateY(-50%);
+  display:flex; align-items:center; gap:4px;
+  background:var(--surface); /* covers underlying text */
+  border-radius:var(--radius);
+  padding:2px 2px 2px 8px;
+  opacity:0; transition:opacity .15s;
+  z-index:10;
+  pointer-events:none;
+}
+.track-row:hover .t-actions,
+.track-row.playing .t-actions {
+  opacity:1;
+  pointer-events:auto;
+}
+.t-menu-btn { z-index:3; }
 .t-btn {
   background:none; border:none; font-size:13px; cursor:pointer;
   color:var(--text3); transition:var(--transition); padding:3px 5px;
@@ -1807,9 +1826,15 @@ html, body {
       <!-- Playlists Grid View -->
       <div class="view" id="view-playlists">
         <div class="view-scroll">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
             <div class="pl-title">All Playlists</div>
             <button class="btn-sm" onclick="document.getElementById('npl-scope-field').style.display=S.isAdmin?'block':'none';openModal('modal-new-pl')">+ New</button>
+          </div>
+          <div style="position:relative;margin-bottom:14px;">
+            <input id="pl-grid-search" class="sidebar-search-input" placeholder="Search playlists…" autocomplete="off"
+              oninput="filterPlaylistsGrid(this.value)"
+              style="width:100%;box-sizing:border-box;padding-right:30px;">
+            <button onclick="document.getElementById('pl-grid-search').value='';filterPlaylistsGrid('')" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;">✕</button>
           </div>
           <div id="pl-filter-bar" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:center;"></div>
           <div id="pl-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px;"></div>
@@ -2994,6 +3019,7 @@ function wireColResize(headId) {
         overlay.remove();
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        saveColPrefs(); // persist widths per host
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
@@ -4716,13 +4742,19 @@ function renderPlaylistsGrid() {
       <span class="chip-check">${_plFilters[c.key]?'✓':''}</span> ${c.label}
     </div>`).join('');
 
-  // Filter playlists
+  // Filter playlists by chip filters AND search query
   const visible = S.playlists.filter(pl => {
     const s = pl.scope || 'personal';
-    if (s === 'admin-bingo')       return _plFilters.bingo;
-    if (s === 'admin-belladonna')  return _plFilters.belladonna;
-    if (s === 'shared')            return _plFilters.shared;
-    return _plFilters.personal;
+    const chipOk = (s === 'admin-bingo' && _plFilters.bingo) ||
+                   (s === 'admin-belladonna' && _plFilters.belladonna) ||
+                   (s === 'shared' && _plFilters.shared) ||
+                   (!['admin-bingo','admin-belladonna','shared'].includes(s) && _plFilters.personal);
+    if (!chipOk) return false;
+    if (_plGridSearchQ) {
+      return pl.name.toLowerCase().includes(_plGridSearchQ) ||
+             (pl.type||'').toLowerCase().includes(_plGridSearchQ);
+    }
+    return true;
   });
 
   const grid = document.getElementById('pl-grid');
@@ -4738,6 +4770,12 @@ function renderPlaylistsGrid() {
       </div>
     </div>`;
   }).join('') : '<div style="color:var(--text3);font-family:var(--serif);font-style:italic;padding:20px 0;">No playlists in this category.</div>';
+}
+
+let _plGridSearchQ = '';
+function filterPlaylistsGrid(q) {
+  _plGridSearchQ = q.toLowerCase().trim();
+  renderPlaylistsGrid();
 }
 
 function togglePlFilter(key) {

@@ -295,7 +295,7 @@ html, body {
 .track-row.playing { background:var(--gold-dim); border-color:var(--gold-border); }
 
 .t-num { font-family:var(--font-heading); font-size:12px; color:var(--text3); text-align:center; }
-.track-row.playing .t-num { display:none; }
+/* t-num stays visible — contains waveform when playing */
 .t-wave { display:none; justify-content:center; align-items:center; }
 .track-row.playing .t-wave { display:flex; }
 
@@ -755,35 +755,38 @@ html, body {
 .search-result-sub { font-size:11px; color:var(--text3); font-family:var(--serif); font-style:italic; }
 
 .sidebar-brand {
-  padding:16px 20px 14px;
+  padding:18px 16px 16px;
   border-bottom:1px solid var(--border2);
   flex-shrink:0;
 }
 .brand-wordmark {
-  display:flex; align-items:center; gap:12px;
+  display:flex; align-items:center; gap:10px;
   font-family:var(--font-display);
   line-height:1;
+  width:100%;
 }
 .brand-logo-img {
-  height:52px; width:52px; object-fit:contain; border-radius:8px; flex-shrink:0;
+  height:64px; width:64px; object-fit:contain; border-radius:9px; flex-shrink:0;
 }
 .brand-text-stack {
   display:flex; flex-direction:column; gap:0;
+  flex:1; min-width:0;
 }
 .brand-word-bella {
   color:var(--text);
-  font-size:26px; letter-spacing:.04em; line-height:1;
+  font-size:30px; letter-spacing:.03em; line-height:1;
+  white-space:nowrap;
 }
 .brand-music-player-row {
-  display:flex; align-items:baseline; gap:6px; margin-top:2px;
+  display:flex; align-items:baseline; gap:7px; margin-top:3px;
 }
 .brand-word-music {
   color:var(--gold);
-  font-size:17px; letter-spacing:.18em; line-height:1.1;
+  font-size:20px; letter-spacing:.16em; line-height:1.1;
 }
 .brand-word-player {
   color:var(--gold);
-  font-size:17px; letter-spacing:.18em; line-height:1.1;
+  font-size:20px; letter-spacing:.16em; line-height:1.1;
   font-family:var(--font-display);
 }
 .brand-divider { display:none; }
@@ -1014,7 +1017,7 @@ html, body {
   color:var(--text-muted);
   text-align:center;
 }
-.track-row.playing .t-num { display:none; }
+/* t-num stays visible — contains waveform when playing */
 .t-wave { display:none; justify-content:center; align-items:center; }
 .track-row.playing .t-wave { display:flex; }
 
@@ -1818,7 +1821,8 @@ html, body {
             <div class="pl-controls" id="pl-controls" style="display:none;">
               <button class="btn-sm" id="btn-shuffle" onclick="toggleShuffle()">⇄ Shuffle</button>
               <button class="btn-sm" id="btn-reset-order" onclick="resetOrder()" style="display:none;" title="Restore original playlist order">↺ Reset Order</button>
-              <button class="btn-sm" onclick="openBulkAdd()" title="Bulk add songs from a list">＋ Bulk Add</button>
+              <button class="btn-sm" id="btn-edit-pl-page" onclick="editPlaylist(S.currentPL.id)" style="display:none;" title="Edit playlist name, type, cover">✏️ Edit Playlist</button>
+              <button class="btn-sm" id="btn-bulk-add-page" onclick="openBulkAdd()" style="display:none;" title="Bulk add songs from a list">＋ Bulk Add</button>
             </div>
           </div>
           <div class="sort-bar" id="pl-sort-bar" style="display:none;">
@@ -2695,7 +2699,6 @@ function editPlaylist(id) {
   document.getElementById('epl-name').value  = pl.name   || '';
   document.getElementById('epl-type').value  = pl.type   || 'general';
   document.getElementById('epl-art').value   = pl.artUrl || '';
-  document.getElementById('epl-timer').value = pl.timer  || 0;
   openModal('modal-edit-pl');
 }
 
@@ -2703,10 +2706,9 @@ async function savePlaylistEdit() {
   const pl = S.playlists.find(p=>p.id===_editPlId); if (!pl) return;
   const name  = document.getElementById('epl-name').value.trim();
   const type  = document.getElementById('epl-type').value;
-  const timer = parseInt(document.getElementById('epl-timer').value) || 0;
   if (!name) { toast('Name cannot be empty'); return; }
   const artUrl = (document.getElementById('epl-art')?.value||'').trim();
-  pl.name = name; pl.type = type; if (artUrl) pl.artUrl = artUrl; else if (artUrl === '') delete pl.artUrl; pl.timer = timer;
+  pl.name = name; pl.type = type; if (artUrl) pl.artUrl = artUrl; else if (artUrl === '') delete pl.artUrl;
   savePL(pl);
   closeModal('modal-edit-pl');
   renderSidePlaylists();
@@ -2714,9 +2716,9 @@ async function savePlaylistEdit() {
   if (S.currentPL?.id === _editPlId) {
     S.currentPL.name  = name;
     S.currentPL.type  = type;
-    S.currentPL.timer = timer;
     document.getElementById('pl-title').textContent = name;
     document.getElementById('topbar-title').textContent = name;
+    const timer = pl.timer || 0;
     const timerStr = timer ? timer+'s timer' : (S.settings.timer ? S.settings.timer+'s timer' : 'Full songs');
     document.getElementById('pl-meta').textContent = `${type==='bingo'?'◈ Bingo':'♪ General'} · ${(pl.tracks||[]).length} tracks · ${timerStr}`;
   }
@@ -2802,6 +2804,11 @@ async function selectPL(id) {
   const timerStr = pl.timer ? `${pl.timer}s timer` : (S.settings.timer ? `${S.settings.timer}s timer` : 'Full songs');
   document.getElementById('pl-meta').textContent = `${pl.type==='bingo'?'🎱 Bingo':'♪ General'} · ${(pl.tracks||[]).length} tracks · ${timerStr}`;
   document.getElementById('pl-controls').style.display='flex';
+  // Admin-only controls
+  const editBtn = document.getElementById('btn-edit-pl-page');
+  const bulkBtn = document.getElementById('btn-bulk-add-page');
+  if (editBtn) editBtn.style.display = S.isAdmin ? '' : 'none';
+  if (bulkBtn) bulkBtn.style.display = S.isAdmin ? '' : 'none';
   updateBulkMissingBadge();
   document.getElementById('topbar-title').textContent = pl.name;
 
@@ -3094,18 +3101,24 @@ function renderTrackList() {
 
   // Wire up drag handles — only if this playlist is editable by the current user
   const canEditCurrentPL = plCanEdit(S.currentPL);
-  // Wire drag from the ⠿ handle cells (not the whole row — prevents click=drag)
+  // Wire drag from the ⠿ handle cells only.
+  // IMPORTANT: draggable is set on mousedown and cleared on mouseup/dragend —
+  // NOT left as a static attribute — because Chrome renders a native drag-ghost
+  // for any draggable element on the slightest pointer movement during a click,
+  // which is what was causing rows to visually "shrink/shift" on a plain click.
   document.querySelectorAll('.t-num[data-drag-handle]').forEach(handle => {
     const row = handle.closest('.track-row');
     if (!row) return;
-    if (!canEditCurrentPL) { handle.setAttribute('draggable', 'false'); return; }
+    if (!canEditCurrentPL) { handle.style.cursor='default'; return; }
+    handle.addEventListener('mousedown', () => { handle.setAttribute('draggable', 'true'); });
     handle.addEventListener('dragstart', e => {
       dragSrcIdx = parseInt(row.dataset.displayIdx ?? row.dataset.origIdx);
       dragSrcOrigIdx = parseInt(row.dataset.origIdx);
       row.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
     });
-    handle.addEventListener('dragend', () => row.classList.remove('dragging'));
+    handle.addEventListener('dragend', () => { row.classList.remove('dragging'); handle.removeAttribute('draggable'); });
+    document.addEventListener('mouseup', () => { handle.removeAttribute('draggable'); }, { passive:true });
     row.addEventListener('dragover', e => { e.preventDefault(); row.classList.add('drag-over'); });
     row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
     row.addEventListener('drop', e => {
@@ -3156,7 +3169,7 @@ function renderRow(t, displayIdx, origIdx) {
   const isSel = isRowSelected('playlist', t.id);
   return '<div class="track-row'+(playing?' playing':'')+(isSel?' selected':'')+'" id="tr-'+i+'" ' +
     'data-orig-idx="'+i+'" data-display-idx="'+displayIdx+'" onclick="selectRow(\'playlist\',\''+t.id+'\',this)" ondblclick="playAt('+i+')" style="user-select:none"> ' +
-    '<div class="t-num" draggable="true" data-drag-handle="1">'+(playing?'<div class="waveform">'+'<div class="wb"></div>'.repeat(5)+'</div>':'<span style="cursor:grab;opacity:0.4">⠿</span>')+'</div>' +
+    '<div class="t-num" data-drag-handle="1">'+(playing?'<div class="waveform">'+'<div class="wb"></div>'.repeat(5)+'</div>':'<span style="cursor:grab;opacity:0.4">⠿</span>')+'</div>' +
     '<div class="t-art">'+(t.artUrl?'<img src="'+t.artUrl+'" loading="lazy">':'<div class="t-art-ph">♪</div>')+'</div>' +
     '<div class="t-title-cell">'+esc(t.title||t.filename||'Unknown')+'</div>' +
     '<div class="t-artist-cell">'+esc(t.artist||'')+'</div>' +
@@ -3285,6 +3298,10 @@ async function tryRestoreFolder() {
   try {
     const perm = await handle.queryPermission({ mode: 'read' });
     if (perm === 'granted') {
+      // Clear library first — mountFolder appends, and S.library may already
+      // hold cached entries from localStorage, which caused duplicates.
+      S.library = [];
+      S.fileHandles = {};
       await mountFolder(handle);
       return;
     }
@@ -3343,7 +3360,16 @@ async function requestFolderPermission() {
 // ══════════════════════════════════════════════════════
 
 function fileFingerprint(name, size) {
-  return btoa(name + size).replace(/[^a-zA-Z0-9]/g,'').slice(0,24);
+  // Full name + size, base64-encoded — no truncation, avoids collisions on
+  // similarly-named files (was previously sliced to 24 chars, causing
+  // different files with long common prefixes to collide and "disappear"
+  // or duplicate depending on load order).
+  let hash = 0;
+  const str = name + '|' + size;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return 'f' + Math.abs(hash).toString(36) + '_' + size.toString(36);
 }
 
 // In-memory cache of Firebase-stored metadata, loaded once per session
@@ -5053,24 +5079,38 @@ function confirmBulkAdd() {
   const toAdd = _bulkMatches.filter(m=>m.status==='matched');
   if (!toAdd.length) return;
   if (!S.currentPL.tracks) S.currentPL.tracks = [];
-  const inPL = new Set(S.currentPL.tracks.map(t=>t.id));
+
   let added = 0;
   toAdd.forEach(m => {
-    if (!inPL.has(m.track.id)) {
-      S.currentPL.tracks.push({...m.track});
-      inPL.add(m.track.id);
-      added++;
-    }
+    if (!S.currentPL.tracks.some(t=>t.id===m.track.id)) added++;
   });
+
+  // Re-sort the ENTIRE playlist to match bulk-list order:
+  // every track that appears in the full bulk list (matched OR already-in)
+  // is placed according to its position in the bulk list; tracks not in the
+  // bulk list at all keep their relative order and are appended after.
+  const bulkOrderIds = _bulkMatches
+    .filter(m => m.track && (m.status==='matched' || m.status==='already-in'))
+    .map(m => m.track.id);
+  const bulkIdSet = new Set(bulkOrderIds);
+
+  const existingById = new Map(S.currentPL.tracks.map(t=>[t.id,t]));
+  toAdd.forEach(m => { if (!existingById.has(m.track.id)) existingById.set(m.track.id, {...m.track}); });
+
+  const orderedFromBulk = bulkOrderIds.map(id => existingById.get(id)).filter(Boolean);
+  const remaining = S.currentPL.tracks.filter(t => !bulkIdSet.has(t.id));
+
+  S.currentPL.tracks = [...orderedFromBulk, ...remaining];
+
   savePL(S.currentPL);
   renderTrackList();
-  // Update statuses to "already-in" so re-check reflects additions
   _bulkMatches.forEach(m=>{ if(m.status==='matched') m.status='already-in'; });
   renderBulkResults();
   document.getElementById('bulk-add-btn').style.display = 'none';
-  toast(`Added ${added} song${added!==1?'s':''} to ${S.currentPL.name}`);
+  toast(`Added ${added} song${added!==1?'s':''} to ${S.currentPL.name} — order matches your list`);
   if (S.currentPL) {
     _bulkStateByPL[S.currentPL.id] = { rawText: document.getElementById('bulk-input').value, matches: _bulkMatches };
+    saveBulkState();
     updateBulkMissingBadge();
   }
 }
@@ -5078,6 +5118,7 @@ function confirmBulkAdd() {
 function updateBulkMissingBadge() {
   const badge = document.getElementById('bulk-missing-badge');
   if (!badge || !S.currentPL) return;
+  if (!S.isAdmin) { badge.style.display='none'; return; }
   const state = _bulkStateByPL[S.currentPL.id];
   if (!state || !state.matches.length) { badge.style.display = 'none'; return; }
   const missing = state.matches.filter(m => m.status === 'not-found').length;

@@ -3512,7 +3512,8 @@ async function enrichTracksInBackground(ids) {
           title:track.title, artist:track.artist, album:track.album,
           duration:track.duration, bpm:track.bpm, artUrl:track.artUrl
         });
-        artQueue.push(id);
+        // Only hit iTunes if the file had no embedded art of its own
+        if (!track.artUrl) artQueue.push(id);
       } catch(e) { /* skip unreadable */ }
     }));
     done += batchIds.length;
@@ -3537,7 +3538,17 @@ async function enrichTracksInBackground(ids) {
 
 async function enrichTrackMetadata(file, existingTrack) {
   const t = { title:existingTrack.title, artist:existingTrack.artist, album:existingTrack.album, duration:0, bpm:null };
-  try { const buf=await file.arrayBuffer(); const tags=parseID3(buf); Object.assign(t,tags); } catch(e){}
+  try {
+    const buf=await file.arrayBuffer();
+    const tags=parseID3(buf);
+    // Promote embedded album art to artUrl directly — this is the actual art
+    // from the file, always more accurate than an iTunes lookup guess.
+    if (tags.embeddedArt) {
+      t.artUrl = tags.embeddedArt;
+      delete tags.embeddedArt;
+    }
+    Object.assign(t,tags);
+  } catch(e){}
   try {
     const url=URL.createObjectURL(file);
     const a=new Audio();
@@ -3654,6 +3665,39 @@ function parseID3(buf) {
       const id=String.fromCharCode(b[off],b[off+1],b[off+2],b[off+3]);
       const fs=(b[off+4]<<24)|(b[off+5]<<16)|(b[off+6]<<8)|b[off+7];
       if(fs<=0||fs>sz) break;
+      if(id==='APIC'){
+        // Embedded picture frame: encoding(1) + MIME type(null-term) + picture type(1) + description(null-term) + image data
+        try {
+          let p = off+10;
+          const encByte = b[p]; p+=1;
+          // MIME type — null-terminated ASCII/Latin1 string, e.g. "image/jpeg"
+          let mimeEnd = p;
+          while (mimeEnd < off+10+fs && b[mimeEnd] !== 0) mimeEnd++;
+          const mime = new TextDecoder('iso-8859-1').decode(b.slice(p, mimeEnd)) || 'image/jpeg';
+          p = mimeEnd + 1;
+          p += 1; // picture type byte
+          // Description — null-terminated, width depends on encoding (1 or 2 byte null)
+          if (encByte===1||encByte===2) {
+            while (p < off+10+fs-1 && !(b[p]===0 && b[p+1]===0)) p+=2;
+            p+=2;
+          } else {
+            while (p < off+10+fs && b[p]!==0) p++;
+            p+=1;
+          }
+          const imgBytes = b.slice(p, off+10+fs);
+          if (imgBytes.length > 100) {
+            // Convert to base64 data URL
+            let binary = '';
+            const CHUNK = 8192;
+            for (let i=0; i<imgBytes.length; i+=CHUNK) {
+              binary += String.fromCharCode.apply(null, imgBytes.subarray(i, i+CHUNK));
+            }
+            out.embeddedArt = 'data:'+mime+';base64,'+btoa(binary);
+          }
+        } catch(e) { /* malformed APIC frame, skip */ }
+        off+=10+fs;
+        continue;
+      }
       const enc=b[off+10];
       const ts=off+11, te=off+10+fs;
       let txt='';
@@ -4892,7 +4936,13 @@ function openBulkAdd() {
 }
 
 function normBulk(s) {
-  return s.toLowerCase()
+  let x = s.toLowerCase();
+  // Strip trailing parenthetical/bracketed qualifiers entirely:
+  // (Radio Edit), (Remix), (feat. X), [Live], (Explicit), (Clean), etc.
+  x = x.replace(/\s*[\(\[][^)\]]*[\)\]]\s*/g, ' ');
+  // Strip a trailing "feat./ft./featuring ..." even without parens
+  x = x.replace(/\s*[-–—]?\s*(feat\.?|ft\.?|featuring)\s+.+$/,'');
+  return x
     .replace(/^(the|a|an)\s+/,'')
     .replace(/[‘’`´ʼ]/g,"'")
     .replace(/[^a-z0-9'\s]/g,'')

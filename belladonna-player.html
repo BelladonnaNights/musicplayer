@@ -3432,25 +3432,13 @@ async function flushMetaWrites() {
 // ── Phase 1: instant scan — filenames + sizes only, no file reads ──
 async function scanDirFast(dirHandle, results, depth) {
   if (depth > 8) return;
-  let entries;
-  try {
-    entries = dirHandle.entries();
-  } catch(e) {
-    console.warn('scanDirFast: could not read entries for', dirHandle.name, e);
-    return;
-  }
-  while (true) {
-    let result;
-    try {
-      result = await entries.next();
-    } catch(e) {
-      // A single unreadable/permission-denied entry should not kill the
-      // whole scan — log it and stop descending into this folder only.
-      console.warn('scanDirFast: entry read failed in', dirHandle.name, e);
-      break;
-    }
-    if (result.done) break;
-    const [name, handle] = result.value;
+  // Use the simple, proven for-await form (this is what worked reliably
+  // before) — but guard each individual entry so one bad file/subfolder
+  // can't take down the whole scan. The previous manual entries.next()
+  // rewrite was too aggressive: a single transient error anywhere would
+  // `break` the entire loop immediately, making the folder look empty
+  // even when it was perfectly fine and just needed a retry.
+  for await (const [name, handle] of dirHandle.entries()) {
     if (name.startsWith('.')) continue;
     try {
       if (handle.kind === 'directory') {
@@ -3459,7 +3447,7 @@ async function scanDirFast(dirHandle, results, depth) {
         results.push({ name, handle });
       }
     } catch(e) {
-      // Skip this single entry, keep scanning the rest of the folder
+      // Skip this single entry only, keep scanning the rest of the folder
       console.warn('scanDirFast: skipping', name, e);
     }
   }
@@ -3498,12 +3486,6 @@ async function mountFolder(dirHandle) {
     // Phase 1 — instant file discovery, no parsing
     const found = [];
     await scanDirFast(dirHandle, found, 0);
-
-    if (found.length === 0) {
-      toast('No audio files found — check the folder contains .mp3/.wav/.flac/.m4a files, or that the app still has permission to read it');
-      if (el) el.textContent = (S.library.length||0) + ' tracks in library';
-      return;
-    }
 
     const existingIds = new Set(S.library.map(t => t.id));
     const newTracks = [];

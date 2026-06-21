@@ -2765,7 +2765,7 @@ async function savePlOrder() {
   // then trusted as the source of truth on the next load.
   S.playlists.forEach((p,i)=>{ p.order = i; });
   try {
-    localStorage.setItem('bella_playlists', JSON.stringify(S.playlists));
+    localStorage.setItem('bella_playlists', JSON.stringify(playlistsForLocalStorage()));
     console.log('[Playlist order] Saved:', S.playlists.map(p=>p.name+'='+p.order).join(', '));
   } catch(e){ console.warn('[Playlist order] localStorage save FAILED:', e); }
   if (db) S.playlists.forEach((p)=>{
@@ -2862,7 +2862,7 @@ async function duplicatePL(id) {
     } catch(e){ copy.id='loc_'+Date.now(); }
   } else { copy.id='loc_'+Date.now(); }
   S.playlists.push(copy);
-  try { localStorage.setItem('bella_playlists', JSON.stringify(S.playlists)); } catch(e){}
+  try { localStorage.setItem('bella_playlists', JSON.stringify(playlistsForLocalStorage())); } catch(e){}
   renderSidePlaylists();
   toast('Duplicated to My Playlists as "'+copy.name+'"');
 }
@@ -2897,7 +2897,7 @@ async function deletePL(id) {
   if(!confirm('Delete "'+pl.name+'"? This cannot be undone.')) return;
   S.playlists=S.playlists.filter(p=>p.id!==id);
   if(db){ try{ await db.ref(plDbPath(pl)).remove(); }catch(e){} }
-  try{ localStorage.setItem('bella_playlists',JSON.stringify(S.playlists)); }catch(e){}
+  try{ localStorage.setItem('bella_playlists',JSON.stringify(playlistsForLocalStorage())); }catch(e){}
   if(S.currentPL?.id===id){ S.currentPL=null; S.track=null; S.trackIdx=-1; document.getElementById('pl-title').textContent='Select a Playlist'; document.getElementById('pl-meta').textContent='Choose a playlist from the sidebar'; document.getElementById('pl-controls').style.display='none'; document.getElementById('track-list-wrap').innerHTML=''; }
   renderSidePlaylists(); toast('Playlist deleted');
 }
@@ -3407,22 +3407,38 @@ async function createPlaylist() {
     } catch(e){ console.warn('createPlaylist Firebase error:', e.message); }
   } else { pl.id='loc_'+Date.now(); }
   S.playlists.push(pl);
-  try { localStorage.setItem('bella_playlists', JSON.stringify(S.playlists)); } catch(e){}
+  try { localStorage.setItem('bella_playlists', JSON.stringify(playlistsForLocalStorage())); } catch(e){}
   renderSidePlaylists();
   closeModal('modal-new-pl');
   toast('Playlist "' + name + '" created');
   selectPL(pl.id);
 }
 
+// Strip large/derivable fields (artUrl especially — can be a multi-hundred-KB
+// base64 data URL per track for embedded album art) before writing playlists
+// to localStorage. Art doesn't need to be persisted here at all: it's always
+// resolved fresh from S.library by syncPlaylistTracksFromLibrary() on every
+// render. Keeping it out of localStorage is what actually fixes playlist
+// order silently failing to save — the writes were blowing past the
+// browser's localStorage quota (5-10MB), which throws QuotaExceededError
+// and aborts the write with ZERO visible error unless you check console.
+function playlistsForLocalStorage() {
+  return S.playlists.map(p => ({
+    ...p,
+    tracks: (p.tracks||[]).map(t => { const { artUrl, ...rest } = t; return rest; })
+  }));
+}
+
 async function savePL(pl) {
   if (!pl?.id) return;
   if (!plCanEdit(pl)) { toast("You don't have permission to edit this playlist"); return; }
-  // Always save full version (with artUrl) to localStorage FIRST, as the
-  // immediate local source of truth — this guarantees order survives a
-  // refresh even if the Firebase write below fails for any reason.
+  // Always save full version to localStorage FIRST, as the immediate local
+  // source of truth — this guarantees order survives a refresh even if the
+  // Firebase write below fails for any reason. artUrl is intentionally
+  // excluded — see playlistsForLocalStorage() above.
   try {
-    localStorage.setItem('bella_playlists', JSON.stringify(S.playlists));
-  } catch(e){}
+    localStorage.setItem('bella_playlists', JSON.stringify(playlistsForLocalStorage()));
+  } catch(e){ console.warn('[savePL] localStorage save FAILED:', e); }
   if (db) {
     try {
       const { scope, id, ...rest } = pl;

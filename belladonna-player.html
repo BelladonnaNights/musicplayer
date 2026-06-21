@@ -734,6 +734,7 @@ html, body {
 
 /* Playlist grid card */
 .pl-grid-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); overflow:hidden; cursor:pointer; transition:border-color .2s,transform .2s; }
+.pl-grid-card.drag-over { border-color:var(--gold-border2); box-shadow:0 0 0 2px var(--gold-dim); }
 .pl-grid-card:hover { border-color:var(--gold-border); transform:translateY(-2px); }
 .pl-grid-card.active { border-color:var(--gold-border2); }
 .pl-grid-art { width:100%; aspect-ratio:1; background:var(--surface2); display:flex; align-items:center; justify-content:center; font-size:36px; color:var(--text3); overflow:hidden; }
@@ -2737,11 +2738,17 @@ function toggleSectionCollapse(scope) {
 }
 
 async function savePlOrder() {
+  // CRITICAL: assign p.order to every item BEFORE writing to localStorage —
+  // the previous version wrote localStorage first, so it always saved the
+  // OLD order values (or undefined), which is exactly what loadPlaylists()
+  // then trusted as the source of truth on the next load. That's why drag
+  // order never actually persisted: the one copy being read back was the
+  // one copy that never got updated.
+  S.playlists.forEach((p,i)=>{ p.order = i; });
   try { localStorage.setItem('bella_playlists', JSON.stringify(S.playlists)); } catch(e){}
-  if (db) S.playlists.forEach((p,i)=>{
-    p.order=i;
+  if (db) S.playlists.forEach((p)=>{
     if (!plCanEdit(p)) return; // don't write order for items we can't edit (read-only admin/shared for hosts)
-    db.ref(plDbPath(p)+'/order').set(i).catch(()=>{});
+    db.ref(plDbPath(p)+'/order').set(p.order).catch(()=>{});
   });
 }
 
@@ -5140,9 +5147,10 @@ function renderPlaylistsGrid() {
   const grid = document.getElementById('pl-grid');
   const activePLId = S.currentPL?.id;
   grid.innerHTML = visible.length ? visible.map(pl => {
-    const art = pl.artUrl ? `<img src="${esc(pl.artUrl)}" loading="lazy">` : (pl.type==='bingo' ? '🎱' : '♪');
     const cnt = (pl.tracks||[]).length;
-    return `<div class="pl-grid-card ${activePLId===pl.id?'active':''}" ondblclick="selectPL('${pl.id}');showView('player')">
+    const canEdit = plCanEdit(pl);
+    return `<div class="pl-grid-card ${activePLId===pl.id?'active':''}" data-pl-id="${pl.id}" data-pl-scope="${pl.scope}"
+      draggable="${canEdit}" ondblclick="selectPL('${pl.id}');showView('player')">
       <div class="pl-grid-art">${pl.artUrl?`<img src="${esc(pl.artUrl)}" loading="lazy">`:(pl.type==='bingo'?'🎱':'♪')}</div>
       <div class="pl-grid-info">
         <div class="pl-grid-name">${esc(pl.name)}</div>
@@ -5150,6 +5158,46 @@ function renderPlaylistsGrid() {
       </div>
     </div>`;
   }).join('') : '<div style="color:var(--text3);font-family:var(--serif);font-style:italic;padding:20px 0;">No playlists in this category.</div>';
+
+  wireGridDrag();
+}
+
+// Drag-to-reorder on the Playlists grid page — mirrors the sidebar's
+// drag behavior exactly and saves through the same savePlOrder(), so
+// both views always agree on order and persist identically.
+let _gridDragId = null, _gridDragScope = null;
+function wireGridDrag() {
+  document.querySelectorAll('.pl-grid-card[draggable="true"]').forEach(card => {
+    card.addEventListener('dragstart', e => {
+      _gridDragId = card.dataset.plId;
+      _gridDragScope = card.dataset.plScope;
+      card.style.opacity = '0.4';
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => { card.style.opacity = ''; });
+    card.addEventListener('dragover', e => {
+      if (card.dataset.plScope !== _gridDragScope) return; // only reorder within the same category
+      e.preventDefault();
+      card.classList.add('drag-over');
+    });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      if (card.dataset.plScope !== _gridDragScope) return;
+      const destId = card.dataset.plId;
+      if (!_gridDragId || _gridDragId === destId) return;
+      const srcIdx = S.playlists.findIndex(p => p.id === _gridDragId);
+      const destIdx = S.playlists.findIndex(p => p.id === destId);
+      if (srcIdx === -1 || destIdx === -1) return;
+      const [moved] = S.playlists.splice(srcIdx, 1);
+      S.playlists.splice(destIdx, 0, moved);
+      _gridDragId = null;
+      savePlOrder();
+      renderPlaylistsGrid();
+      renderSidePlaylists(); // keep the sidebar in sync too
+    });
+  });
 }
 
 let _plGridSearchQ = '';

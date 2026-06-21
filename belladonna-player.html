@@ -3719,7 +3719,13 @@ async function enrichTracksInBackground(ids) {
       if (!track || !handle) return;
       try {
         const file = handle._safariFile ? handle._safariFile : await handle.getFile();
-        const enriched = await enrichTrackMetadata(file, track);
+        // Belt-and-suspenders: even with the timeout inside enrichTrackMetadata,
+        // guarantee this single track can NEVER hang the batch for more than 6s
+        // total, no matter what unexpected thing a malformed file does.
+        const enriched = await Promise.race([
+          enrichTrackMetadata(file, track),
+          new Promise(res => setTimeout(() => res({ title:track.title, artist:track.artist, album:track.album, duration:0, bpm:null }), 6000))
+        ]);
         Object.assign(track, enriched, { _needsEnrich:false });
         // artUrl intentionally NOT sent to Firebase — embedded art especially
         // can be large, and at hundreds/thousands of songs that would eat
@@ -3802,7 +3808,17 @@ async function enrichTrackMetadata(file, existingTrack) {
   try {
     const url=URL.createObjectURL(file);
     const a=new Audio();
-    await new Promise(res=>{a.src=url;a.onloadedmetadata=()=>{t.duration=a.duration;res();};a.onerror=res;});
+    // CRITICAL: a corrupted, truncated, or oddly-encoded file can leave
+    // onloadedmetadata AND onerror both silently never firing — the browser
+    // just hangs forever on that one file. Since this is awaited inside a
+    // batch of 6 running in parallel, ONE such file freezes that whole
+    // batch permanently, which freezes the entire upload at a fixed count
+    // (exactly the "stuck at song N" symptom). A hard timeout guarantees
+    // forward progress no matter what the file actually contains.
+    await Promise.race([
+      new Promise(res=>{ a.src=url; a.onloadedmetadata=()=>{t.duration=a.duration;res();}; a.onerror=res; }),
+      new Promise(res=>setTimeout(res, 4000)) // give up after 4s, move on
+    ]);
     URL.revokeObjectURL(url);
   } catch(e){}
   return t;

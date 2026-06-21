@@ -313,15 +313,15 @@ html, body {
 .t-art-ph { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:16px; opacity:0.2; }
 
 .t-info { min-width:0; }
-.t-title-cell { font-family:var(--font-heading); font-size:12px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:.03em; align-self:center; }
-.t-artist-cell { font-size:12px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:var(--serif); font-style:italic; align-self:center; }
-.t-album { font-size:12px; color:var(--text3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; align-self:center; }
+.t-title-cell { font-family:var(--font-heading); font-size:var(--track-font-size,12px); color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:.03em; align-self:center; }
+.t-artist-cell { font-size:var(--track-font-size,12px); color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:var(--serif); font-style:italic; align-self:center; }
+.t-album { font-size:var(--track-font-size,12px); color:var(--text3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; align-self:center; }
 /* Keep legacy t-info for any remaining uses */
 .t-info { display:flex; flex-direction:column; overflow:hidden; }
 .t-title { font-family:var(--font-heading); font-size:12px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:.03em; }
 .t-artist { font-size:12px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; font-family:var(--serif); font-style:italic; }
-.t-bpm { font-size:12px; color:var(--text3); text-align:center; }
-.t-dur { font-size:12px; color:var(--text3); text-align:right; }
+.t-bpm { font-size:var(--track-font-size,12px); color:var(--text3); text-align:center; }
+.t-dur { font-size:var(--track-font-size,12px); color:var(--text3); text-align:right; }
 
 .t-actions {
   position:absolute;
@@ -841,7 +841,7 @@ html, body {
   display:flex; align-items:center; gap:8px;
   padding:7px 12px; border-radius:var(--radius);
   cursor:pointer; transition:var(--transition);
-  font-size:12px; color:var(--text2); border:1px solid transparent; margin-bottom:1px;
+  font-size:var(--sidebar-font-size,12px); color:var(--text2); border:1px solid transparent; margin-bottom:1px;
 }
 .pl-item:hover { background:var(--surface2); color:var(--text); }
 .pl-item.active { color:var(--gold2); border-color:var(--gold-border); background:var(--gold-dim); }
@@ -1788,6 +1788,13 @@ html, body {
     <!-- Main -->
     <div class="main-content">
       <!-- Top bar -->
+      <div id="load-progress-bar" style="display:none;background:linear-gradient(90deg,var(--surface2),var(--surface));border-bottom:1px solid var(--gold-border);padding:6px 20px;align-items:center;gap:10px;font-family:var(--font-heading);font-size:11px;letter-spacing:.05em;color:var(--gold2);">
+        <span id="load-progress-text">Loading…</span>
+        <div style="flex:1;height:3px;background:var(--surface3);border-radius:2px;overflow:hidden;max-width:240px;">
+          <div id="load-progress-fill" style="height:100%;width:0%;background:var(--gold);transition:width .3s ease;"></div>
+        </div>
+        <span id="load-progress-eta" style="color:var(--text3);font-size:10px;"></span>
+      </div>
       <div class="topbar">
         <div class="topbar-title" id="topbar-title">Belladonna Audio Alchemies</div>
         <div class="topbar-actions">
@@ -1993,6 +2000,47 @@ html, body {
                   <div class="settings-label-sub">Fast fade on manual skip</div>
                 </div>
                 <div class="toggle on" id="tog-cleanskip" onclick="toggleSetting('cleanSkip')"></div>
+              </div>
+            </div>
+
+            <div class="admin-card">
+              <div class="admin-card-title">🖼 Display</div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Album Art</div>
+                  <div class="settings-label-sub">Show cover art in track lists</div>
+                </div>
+                <div class="toggle on" id="tog-art" onclick="toggleSetting('artEnabled')"></div>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Album Art Size</div>
+                  <div class="settings-label-sub">Just the cover thumbnail — not other columns</div>
+                </div>
+                <div class="range-wrap">
+                  <input type="range" class="range-input" id="set-artsize" min="28" max="100" step="2" value="44" oninput="saveSetting('artSize',this.value)">
+                  <span class="range-val" id="val-artsize">44px</span>
+                </div>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Track List Font Size</div>
+                  <div class="settings-label-sub">Library & playlist tables</div>
+                </div>
+                <div class="range-wrap">
+                  <input type="range" class="range-input" id="set-fonttable" min="10" max="18" step="1" value="12" oninput="saveSetting('fontSizeTable',this.value)">
+                  <span class="range-val" id="val-fonttable">12px</span>
+                </div>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Sidebar Font Size</div>
+                  <div class="settings-label-sub">Playlist names & nav — separate from track lists</div>
+                </div>
+                <div class="range-wrap">
+                  <input type="range" class="range-input" id="set-fontsidebar" min="10" max="18" step="1" value="13" oninput="saveSetting('fontSizeSidebar',this.value)">
+                  <span class="range-val" id="val-fontsidebar">13px</span>
+                </div>
               </div>
             </div>
           </div>
@@ -2295,7 +2343,7 @@ const S = {
   volume: 0.8,
   cuePoints: {}, // trackId -> {bingo, triviaS, triviaE} — GLOBAL default, set by anyone, visible to all
   cueOverrides: {}, // trackId -> {bingo, triviaS, triviaE} — PERSONAL to this host only
-  settings: { crossfade: 8, timer: 0, bpmMatch: true, cleanSkip: true },
+  settings: { crossfade: 8, timer: 0, bpmMatch: true, cleanSkip: true, artEnabled: true, artSize: 44, fontSizeTable: 12, fontSizeSidebar: 13 },
   sessionId: null,
   sessionStart: null,
   _allSessions: [],
@@ -2554,6 +2602,24 @@ async function loadPlaylists() {
       const fromMine   = Object.entries(mineSnap.val()   || {}).map(([id,p])=>({id,...p,scope:'personal',owner:S.user.username}));
       merged = [...fromBingo, ...fromBella, ...fromShared, ...fromMine];
 
+      // Sort by saved `order` field — this was being written on every
+      // sidebar drag-reorder but never actually read back, so the order
+      // always reverted to Firebase's raw object-key order on reload.
+      // Prefer localStorage's order when it has a different sequence for
+      // the same set of IDs, same reasoning as track order below: it's
+      // written synchronously and is the most current intent.
+      const localOrderIds = Object.values(localBackup)
+        .sort((a,b)=>(a.order??0)-(b.order??0))
+        .map(p=>p.id);
+      if (localOrderIds.length) {
+        const byId = new Map(merged.map(p=>[p.id,p]));
+        const ordered = localOrderIds.map(id=>byId.get(id)).filter(Boolean);
+        const remaining = merged.filter(p=>!localOrderIds.includes(p.id));
+        merged = [...ordered, ...remaining];
+      } else {
+        merged.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
+      }
+
       // Re-merge artUrls stripped before saving to Firebase, AND prefer the
       // localStorage track ORDER if it differs — localStorage is written
       // synchronously on every drag-drop, so it's the most trustworthy
@@ -2605,7 +2671,7 @@ function renderPLItem(p, i) {
     'oncontextmenu="showPLMenu(event,\''+p.id+'\')">'+
     (canEdit ? '<span style="cursor:grab;opacity:0.4;margin-right:2px;font-size:13px;">⠿</span>' : '<span style="width:13px;display:inline-block;"></span>') +
     '<span>'+(p.type==='bingo'?'◈':'♪')+'</span>'+
-    '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;">'+esc(p.name)+'</span>'+
+    '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--sidebar-font-size,13px);">'+esc(p.name)+'</span>'+
     sharedTag +
     (canEdit ? '<button onclick="event.stopPropagation();editPlaylist(\x27'+p.id+'\x27)" class="pl-item-edit-btn" title="Edit playlist">✏️</button>' : '') +
   '</div>';
@@ -2938,6 +3004,13 @@ function toggleCol(i) {
   saveColPrefs();
   applyColWidths();
   renderColMenu();
+  // Keep the Settings page's Album Art toggle in sync with this column checkbox —
+  // they control the same thing through two different entry points.
+  if (i === 1) {
+    S.settings.artEnabled = colVisible[1];
+    document.getElementById('tog-art')?.classList.toggle('on', colVisible[1]);
+    if(db){ try{ db.ref('player/users/' + S.user.username + '/settings/playback').set(S.settings); }catch(e){} }
+  }
 }
 
 function renderColMenu() {
@@ -2950,6 +3023,49 @@ function renderColMenu() {
       '</div>';
     }).join('');
   });
+}
+
+function toggleArtMenu(context, btnEl) {
+  const menuId = context + '-art-menu';
+  const menu = document.getElementById(menuId);
+  if (!menu) return;
+  const open = menu.classList.contains('open');
+  document.querySelectorAll('.col-add-menu.open').forEach(m => m.classList.remove('open'));
+  if (open) return;
+  const sizes = [
+    { label:'Small',  px:32 },
+    { label:'Medium', px:44 },
+    { label:'Large',  px:60 },
+  ];
+  const curW = colWidths[1];
+  menu.innerHTML =
+    '<div style="padding:6px 12px 4px;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);font-family:var(--font-heading);">Album Art</div>' +
+    sizes.map(s => {
+      const active = curW === s.px;
+      return '<div class="col-add-item'+(active?' checked':'')+'" onclick="setArtSize('+s.px+')">' +
+        '<span class="col-add-check">'+(active?'✓':'')+'</span><span>'+s.label+'</span>' +
+      '</div>';
+    }).join('') +
+    '<div class="ctx-divider"></div>' +
+    '<div class="col-add-item" onclick="toggleCol(1)">' +
+      '<span class="col-add-check">'+(colVisible[1] ? '' : '✓')+'</span><span>'+(colVisible[1] ? 'Hide art' : 'Show art')+'</span>' +
+    '</div>';
+  menu.classList.add('open');
+}
+
+function setArtSize(px) {
+  colWidths[1] = px;
+  colVisible[1] = true; // showing a size implies visible
+  saveColPrefs();
+  applyColWidths();
+  document.querySelectorAll('.col-add-menu.open').forEach(m => m.classList.remove('open'));
+  toast('Album art size: ' + px + 'px');
+  // Keep the Settings page slider in sync
+  S.settings.artSize = px;
+  S.settings.artEnabled = true;
+  const ase=document.getElementById('set-artsize'); if(ase){ase.value=px; document.getElementById('val-artsize').textContent=px+'px';}
+  document.getElementById('tog-art')?.classList.toggle('on', true);
+  if(db){ try{ db.ref('player/users/' + S.user.username + '/settings/playback').set(S.settings); }catch(e){} }
 }
 
 function toggleColMenu(menuId) {
@@ -3084,7 +3200,11 @@ function renderTrackList() {
   wrap.innerHTML =
     '<div class="track-table-head" id="track-head">' +
     '<div>#</div>' +
-    '<div></div>' +
+    '<div style="position:relative;display:flex;align-items:center;justify-content:center;" title="Album art size">' +
+      '<button class="col-add-btn" onclick="event.stopPropagation();toggleArtMenu(\x27pl\x27,this)" style="position:static;font-size:9px;opacity:0.5;" title="Resize or hide album art">⊡</button>' +
+      '<div class="col-add-menu" id="pl-art-menu" style="left:0;right:auto;min-width:140px;"></div>' +
+      '<div class="col-resize-handle" data-col="1"></div>' +
+    '</div>' +
     '<div class="col-sort '+(S.plSort==="title"?"active":"")+'" onclick="setPlSort(\x27title\x27)">Title<div class="col-resize-handle" data-col="2"></div></div>' +
     '<div class="col-sort '+(S.plSort==="artist"?"active":"")+'" onclick="setPlSort(\x27artist\x27)">Artist<div class="col-resize-handle" data-col="3"></div></div>' +
     '<div class="col-sort '+(S.plSort==="album"?"active":"")+'" onclick="setPlSort(\x27album\x27)">Album<div class="col-resize-handle" data-col="4"></div></div>' +
@@ -3423,10 +3543,19 @@ function queueMetaSave(id, data) {
 async function flushMetaWrites() {
   const ids = Object.keys(metaWriteQueue);
   if (!ids.length) return;
-  const updates = {};
-  ids.forEach(id => { updates['player/library_meta/' + id] = metaWriteQueue[id]; });
+  const queue = metaWriteQueue;
   metaWriteQueue = {};
-  try { await db.ref().update(updates); } catch(e) { console.warn('Metadata batch write failed:', e); }
+  // Chunk into smaller batches — embedded album art can make a single
+  // update() payload large enough to risk hitting Firebase RTDB limits
+  // when many songs finish enriching at once.
+  const CHUNK = 25;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const batchIds = ids.slice(i, i + CHUNK);
+    const updates = {};
+    batchIds.forEach(id => { updates['player/library_meta/' + id] = queue[id]; });
+    try { await db.ref().update(updates); }
+    catch(e) { console.warn('Metadata batch write failed for', batchIds.length, 'tracks:', e); }
+  }
 }
 
 // ── Phase 1: instant scan — filenames + sizes only, no file reads ──
@@ -3537,12 +3666,43 @@ async function mountFolder(dirHandle) {
 
 // ── Phase 2: background enrichment — ID3 tags + duration, small batches ──
 let enrichRunning = false;
+function showLoadProgress(label, doneCount, total, startTime) {
+  const bar = document.getElementById('load-progress-bar');
+  const text = document.getElementById('load-progress-text');
+  const fill = document.getElementById('load-progress-fill');
+  const eta = document.getElementById('load-progress-eta');
+  if (!bar) return;
+  bar.style.display = 'flex';
+  const pct = total ? Math.min(100, Math.round((doneCount/total)*100)) : 0;
+  if (text) text.textContent = label + ' ' + doneCount + ' / ' + total + ' songs';
+  if (fill) fill.style.width = pct + '%';
+  if (eta) {
+    if (doneCount > 0 && doneCount < total) {
+      const elapsed = (Date.now() - startTime) / 1000;
+      const perSong = elapsed / doneCount;
+      const remaining = Math.round(perSong * (total - doneCount));
+      if (remaining > 90) eta.textContent = '~' + Math.ceil(remaining/60) + ' min left';
+      else if (remaining > 5) eta.textContent = '~' + remaining + 's left';
+      else eta.textContent = 'almost done…';
+    } else {
+      eta.textContent = '';
+    }
+  }
+}
+
+function hideLoadProgress() {
+  const bar = document.getElementById('load-progress-bar');
+  if (bar) setTimeout(() => { bar.style.display = 'none'; }, 600);
+}
+
 async function enrichTracksInBackground(ids) {
   if (enrichRunning) { S._pendingEnrich = (S._pendingEnrich||[]).concat(ids); return; }
   enrichRunning = true;
   const BATCH = 6;
   let done = 0;
   const artQueue = [];
+  const startTime = Date.now();
+  showLoadProgress('Reading tags & artwork —', 0, ids.length, startTime);
 
   for (let i = 0; i < ids.length; i += BATCH) {
     const batchIds = ids.slice(i, i + BATCH);
@@ -3554,9 +3714,13 @@ async function enrichTracksInBackground(ids) {
         const file = handle._safariFile ? handle._safariFile : await handle.getFile();
         const enriched = await enrichTrackMetadata(file, track);
         Object.assign(track, enriched, { _needsEnrich:false });
+        // artUrl intentionally NOT sent to Firebase — embedded art especially
+        // can be large, and at hundreds/thousands of songs that would eat
+        // significant Firebase storage and slow every login. Art is kept
+        // local-only (re-extracted from each file on every folder load).
         queueMetaSave(id, {
           title:track.title, artist:track.artist, album:track.album,
-          duration:track.duration, bpm:track.bpm, artUrl:track.artUrl
+          duration:track.duration, bpm:track.bpm
         });
         // Only hit iTunes if the file had no embedded art of its own
         if (!track.artUrl) artQueue.push(id);
@@ -3565,6 +3729,7 @@ async function enrichTracksInBackground(ids) {
     done += batchIds.length;
     const el = document.getElementById('lib-count');
     if (el) el.textContent = S.library.length + ' tracks · refining ' + done + '/' + ids.length + '…';
+    showLoadProgress('Reading tags & artwork —', done, ids.length, startTime);
     renderLibrary();
     await new Promise(r => setTimeout(r, 30)); // yield to keep UI responsive
   }
@@ -3573,13 +3738,45 @@ async function enrichTracksInBackground(ids) {
   renderLibrary();
   toast('Library refined ✓');
 
-  if (artQueue.length) fetchArtInBackground(artQueue);
+  if (artQueue.length) {
+    fetchArtInBackground(artQueue); // this phase will manage the progress bar itself
+  } else {
+    hideLoadProgress();
+  }
 
   enrichRunning = false;
   if (S._pendingEnrich?.length) {
     const next = S._pendingEnrich; S._pendingEnrich = [];
     enrichTracksInBackground(next);
   }
+}
+
+// Downscale a data: URL image to a max dimension and re-encode as JPEG,
+// dramatically shrinking embedded album art before it's stored in Firebase.
+// Raw embedded covers are often 500KB-2MB+ each; at a few hundred songs that
+// blows well past sane Firebase RTDB payload sizes and slows every login.
+// 300x300 matches the resolution already used for iTunes fallback art.
+function downscaleArt(dataUrl, maxDim) {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let w = img.width, h = img.height;
+          if (w <= maxDim && h <= maxDim) { resolve(dataUrl); return; } // already small
+          const scale = maxDim / Math.max(w, h);
+          w = Math.round(w*scale); h = Math.round(h*scale);
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', 0.82));
+        } catch(e) { resolve(dataUrl); } // fall back to original on any canvas error
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    } catch(e) { resolve(dataUrl); }
+  });
 }
 
 async function enrichTrackMetadata(file, existingTrack) {
@@ -3590,7 +3787,7 @@ async function enrichTrackMetadata(file, existingTrack) {
     // Promote embedded album art to artUrl directly — this is the actual art
     // from the file, always more accurate than an iTunes lookup guess.
     if (tags.embeddedArt) {
-      t.artUrl = tags.embeddedArt;
+      t.artUrl = tags.embeddedArt; // kept local only — not written to Firebase, see queueMetaSave
       delete tags.embeddedArt;
     }
     Object.assign(t,tags);
@@ -3610,6 +3807,9 @@ async function fetchArtInBackground(ids) {
   if (artFetchRunning) { S._pendingArt = (S._pendingArt||[]).concat(ids); return; }
   artFetchRunning = true;
   const BURST = 4;
+  let done = 0;
+  const startTime = Date.now();
+  if (ids.length) showLoadProgress('Fetching missing cover art —', 0, ids.length, startTime);
   for (let i = 0; i < ids.length; i += BURST) {
     const burst = ids.slice(i, i + BURST);
     await Promise.all(burst.map(async id => {
@@ -3624,9 +3824,12 @@ async function fetchArtInBackground(ids) {
         });
       }
     }));
+    done += burst.length;
+    showLoadProgress('Fetching missing cover art —', done, ids.length, startTime);
     renderLibrary();
   }
   flushMetaWrites();
+  if (ids.length) hideLoadProgress();
   artFetchRunning = false;
   if (S._pendingArt?.length) {
     const next = S._pendingArt; S._pendingArt = [];
@@ -3842,7 +4045,11 @@ function renderLibrary() {
   el.innerHTML=
     '<div class="track-table-head" id="lib-head">' +
     '<div>#</div>' +
-    '<div></div>' +
+    '<div style="position:relative;display:flex;align-items:center;justify-content:center;" title="Album art size">' +
+      '<button class="col-add-btn" onclick="event.stopPropagation();toggleArtMenu(\x27lib\x27,this)" style="position:static;font-size:9px;opacity:0.5;" title="Resize or hide album art">⊡</button>' +
+      '<div class="col-add-menu" id="lib-art-menu" style="left:0;right:auto;min-width:140px;"></div>' +
+      '<div class="col-resize-handle" data-col="1"></div>' +
+    '</div>' +
     '<div class="col-sort '+(S.libSort==="title"?"active":"")+'" onclick="setLibSort(\x27title\x27)">Title<div class="col-resize-handle" data-col="2"></div></div>' +
     '<div class="col-sort '+(S.libSort==="artist"?"active":"")+'" onclick="setLibSort(\x27artist\x27)">Artist<div class="col-resize-handle" data-col="3"></div></div>' +
     '<div class="col-sort '+(S.libSort==="album"?"active":"")+'" onclick="setLibSort(\x27album\x27)">Album<div class="col-resize-handle" data-col="4"></div></div>' +
@@ -3855,7 +4062,7 @@ function renderLibrary() {
     '</div>' +
     '<div>' + tracks.map((t,i)=>
       '<div class="track-row'+(isRowSelected('library',t.id)?' selected':'')+'" onclick="selectRow(\'library\',\''+t.id+'\',this)" ondblclick="playFromLibrary(\''+t.id+'\')">' +
-        '<div class="t-num">'+(i+1)+'</div>' +
+        '<div class="t-num"></div>' +
         '<div class="t-art">'+(t.artUrl?'<img src="'+t.artUrl+'" loading="lazy">':'<div class="t-art-ph">♪</div>')+'</div>' +
         '<div class="t-title-cell">'+esc(t.title||t.filename||'')+'</div>' +
         '<div class="t-artist-cell">'+esc(t.artist||'')+'</div>' +
@@ -4586,6 +4793,29 @@ function applySettings() {
   if(te){te.value=s.timer;document.getElementById('val-timer').textContent=s.timer?s.timer+'s':'Off';}
   document.getElementById('tog-bpm')?.classList.toggle('on',s.bpmMatch);
   document.getElementById('tog-cleanskip')?.classList.toggle('on',s.cleanSkip);
+
+  // Display settings
+  document.getElementById('tog-art')?.classList.toggle('on', s.artEnabled !== false);
+  const ase=document.getElementById('set-artsize'); if(ase){ase.value=s.artSize||44; document.getElementById('val-artsize').textContent=(s.artSize||44)+'px';}
+  const fte=document.getElementById('set-fonttable'); if(fte){fte.value=s.fontSizeTable||12; document.getElementById('val-fonttable').textContent=(s.fontSizeTable||12)+'px';}
+  const fse=document.getElementById('set-fontsidebar'); if(fse){fse.value=s.fontSizeSidebar||13; document.getElementById('val-fontsidebar').textContent=(s.fontSizeSidebar||13)+'px';}
+  applyDisplaySettings();
+}
+
+// Pushes display settings (art on/off, art size, font sizes) onto CSS variables
+// and the existing column-width system, so every table/sidebar instantly reflects them.
+function applyDisplaySettings() {
+  const s = S.settings;
+  document.documentElement.style.setProperty('--track-font-size', (s.fontSizeTable||12)+'px');
+  document.documentElement.style.setProperty('--sidebar-font-size', (s.fontSizeSidebar||13)+'px');
+  document.documentElement.style.setProperty('--art-size', (s.artSize||44)+'px');
+
+  // Sync with the existing per-column visibility system (the "+" dropdown's
+  // Cover checkbox) so both controls always agree with each other.
+  const artOn = s.artEnabled !== false;
+  if (colVisible[1] !== artOn) { colVisible[1] = artOn; saveColPrefs(); }
+  if (artOn) colWidths[1] = s.artSize || 44;
+  applyColWidths();
 }
 
 // Every host's settings are their own — saved under their username, never shared
@@ -4593,6 +4823,9 @@ async function saveSetting(k, v) {
   v=parseFloat(v);
   if(k==='crossfade'){S.settings.crossfade=v;document.getElementById('val-xfade').textContent=v+'s';}
   if(k==='timer'){S.settings.timer=v;document.getElementById('val-timer').textContent=v?v+'s':'Off';}
+  if(k==='artSize'){S.settings.artSize=v;document.getElementById('val-artsize').textContent=v+'px';applyDisplaySettings();}
+  if(k==='fontSizeTable'){S.settings.fontSizeTable=v;document.getElementById('val-fonttable').textContent=v+'px';applyDisplaySettings();}
+  if(k==='fontSizeSidebar'){S.settings.fontSizeSidebar=v;document.getElementById('val-fontsidebar').textContent=v+'px';applyDisplaySettings();}
   if(db){ try{await db.ref('player/users/' + S.user.username + '/settings/playback').set(S.settings);}catch(e){} }
 }
 

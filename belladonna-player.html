@@ -2554,10 +2554,24 @@ async function loadPlaylists() {
       const fromMine   = Object.entries(mineSnap.val()   || {}).map(([id,p])=>({id,...p,scope:'personal',owner:S.user.username}));
       merged = [...fromBingo, ...fromBella, ...fromShared, ...fromMine];
 
-      // Re-merge artUrls stripped before saving to Firebase
+      // Re-merge artUrls stripped before saving to Firebase, AND prefer the
+      // localStorage track ORDER if it differs — localStorage is written
+      // synchronously on every drag-drop, so it's the most trustworthy
+      // record of the last order the user actually set, even if a Firebase
+      // write failed or hadn't completed before refresh.
       merged.forEach(p => {
+        const local = localBackup[p.id];
+        if (local?.tracks?.length === (p.tracks||[]).length) {
+          const localIds = local.tracks.map(t=>t.id).join(',');
+          const fbIds = (p.tracks||[]).map(t=>t.id).join(',');
+          if (localIds !== fbIds) {
+            // Order differs — trust localStorage's order, keep Firebase's track data
+            const byId = new Map((p.tracks||[]).map(t=>[t.id,t]));
+            p.tracks = local.tracks.map(lt => byId.get(lt.id) || lt).filter(Boolean);
+          }
+        }
         (p.tracks||[]).forEach(t => {
-          const cached = localBackup[p.id]?.tracks?.find(lt => lt.id === t.id);
+          const cached = local?.tracks?.find(lt => lt.id === t.id);
           if (cached?.artUrl) t.artUrl = cached.artUrl;
         });
       });
@@ -3126,24 +3140,29 @@ function renderTrackList() {
       row.classList.remove('drag-over');
       const destDisplay = parseInt(row.dataset.displayIdx !== undefined ? row.dataset.displayIdx : row.dataset.origIdx);
       const srcDisplay = dragSrcIdx;
-      if (srcDisplay === null || srcDisplay === destDisplay) return;
+      if (srcDisplay === null || srcDisplay === destDisplay) { dragSrcIdx=null; dragSrcOrigIdx=null; return; }
+
       if (S.shuffle && S.shuffledIndices) {
-        // Reorder within shuffledIndices (display order)
+        // Reorder within shuffledIndices (display order only — shuffle order
+        // is session-local by design, not saved to the playlist's real order)
         const [movedIdx] = S.shuffledIndices.splice(srcDisplay, 1);
         S.shuffledIndices.splice(destDisplay, 0, movedIdx);
-        // Update S.trackIdx to follow the moved track
-        if (S.trackIdx === movedIdx) { /* stays the same origIdx */ }
       } else {
-        // Reorder the actual playlist
+        // Reorder the actual playlist — fixed: destination must be the ORIGINAL
+        // index of the row being dropped on, not the source's own index
+        // (previous code had `srcOrig < dragSrcOrigIdx ? srcOrig : srcOrig`,
+        // a no-op that always evaluated to srcOrig — the real bug here).
         const tracks = S.currentPL.tracks;
-        const srcOrig = parseInt(row.dataset.origIdx);
+        const dstOrig = parseInt(row.dataset.origIdx);
         const [movedR] = tracks.splice(dragSrcOrigIdx, 1);
-        const dstOrig = srcOrig < dragSrcOrigIdx ? srcOrig : srcOrig; // destination in orig space
-        tracks.splice(dstOrig, 0, movedR);
-        if (S.trackIdx === dragSrcOrigIdx) S.trackIdx = dstOrig;
-        else if (S.trackIdx > dragSrcOrigIdx && S.trackIdx <= dstOrig) S.trackIdx--;
-        else if (S.trackIdx < dragSrcOrigIdx && S.trackIdx >= dstOrig) S.trackIdx++;
-        savePL(S.currentPL);
+        // After removing the source, if the destination index was after the
+        // source, it has shifted down by one — adjust accordingly.
+        const insertAt = dstOrig > dragSrcOrigIdx ? dstOrig - 1 : dstOrig;
+        tracks.splice(insertAt, 0, movedR);
+        if (S.trackIdx === dragSrcOrigIdx) S.trackIdx = insertAt;
+        else if (S.trackIdx > dragSrcOrigIdx && S.trackIdx <= insertAt) S.trackIdx--;
+        else if (S.trackIdx < dragSrcOrigIdx && S.trackIdx >= insertAt) S.trackIdx++;
+        savePL(S.currentPL); // now reaches Firebase with the CORRECT order
       }
       dragSrcIdx = null; dragSrcOrigIdx = null;
       renderTrackList();
@@ -3214,20 +3233,24 @@ async function createPlaylist() {
 async function savePL(pl) {
   if (!pl?.id) return;
   if (!plCanEdit(pl)) { toast("You don't have permission to edit this playlist"); return; }
+  // Always save full version (with artUrl) to localStorage FIRST, as the
+  // immediate local source of truth — this guarantees order survives a
+  // refresh even if the Firebase write below fails for any reason.
+  try {
+    localStorage.setItem('bella_playlists', JSON.stringify(S.playlists));
+  } catch(e){}
   if (db) {
     try {
-      // Strip artUrl + scope/id before saving — scope/id are implied by path, artUrl is cached locally
       const { scope, id, ...rest } = pl;
       const forDb = { ...rest, tracks: (pl.tracks||[]).map(t => {
         const { artUrl, ...trest } = t; return trest;
       })};
       await db.ref(plDbPath(pl)).set(forDb);
-    } catch(e){ console.warn('savePL Firebase error:', e.message); }
+    } catch(e){
+      console.warn('savePL Firebase error:', e.message);
+      toast('⚠ Order saved locally but failed to sync — check connection');
+    }
   }
-  // Always save full version (with artUrl) to localStorage as local backup
-  try {
-    localStorage.setItem('bella_playlists', JSON.stringify(S.playlists));
-  } catch(e){}
 }
 
 function removeTrack(i) {
@@ -3464,9 +3487,15 @@ async function mountFolder(dirHandle) {
     if (existingIds.has(id)) continue;
 
     const cached = metaCache[id];
-    if (cached) {
-      // Known file — use cached metadata, skip slow parsing entirely
+    if (cached && cached.artUrl) {
+      // Known file WITH art already resolved — skip slow re-parsing entirely
       newTracks.push({ id, filename:name, ...cached, _needsEnrich:false });
+    } else if (cached) {
+      // Known file but no art cached yet (e.g. from before embedded-art support
+      // existed, or iTunes had no match last time) — keep the cached text fields
+      // but re-run enrichment so we re-check the file for embedded art / retry iTunes.
+      newTracks.push({ id, filename:name, ...cached, _needsEnrich:true });
+      enrichQueue.push(id);
     } else {
       // Unknown file — show it immediately with filename-based guess, enrich later
       const guess = trackFromFilenameOnly(name, size, id);

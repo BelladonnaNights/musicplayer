@@ -2502,7 +2502,14 @@ function enterApp() {
 
   // Always try to restore folder — delay slightly so DOM is ready
   setTimeout(tryRestoreFolder, 300);
-  setTimeout(loadBulkState, 500); // restore bulk add state after library loads
+  // Wait for the library to actually have tracks before restoring bulk-add
+  // state — a blind timeout risks running before a large folder finishes
+  // loading, in which case every saved trackId would fail to resolve.
+  // Cap retries so this can't loop forever if a library genuinely never loads.
+  (function waitForLibraryThenLoadBulkState(attempt) {
+    if (S.library.length > 0 || attempt > 20) { loadBulkState(); return; }
+    setTimeout(() => waitForLibraryThenLoadBulkState(attempt+1), 300);
+  })(0);
 
   // Bingo bridge setup
   loadBingoCategories().then(() => {
@@ -2738,6 +2745,10 @@ function renderSidePlaylists() {
       if (dragIdx===null||dragIdx===destIdx) return;
       const [moved]=S.playlists.splice(dragIdx,1); S.playlists.splice(destIdx,0,moved);
       dragIdx=null; savePlOrder(); renderSidePlaylists();
+      // The grid page was never being told about sidebar reorders, so it
+      // only ever picked up the new order on a full page refresh — this is
+      // the actual cause of "saves, but only updates after refresh."
+      if (document.getElementById('view-playlists')?.classList.contains('active')) renderPlaylistsGrid();
     });
   });
 }
@@ -2897,6 +2908,13 @@ async function selectPL(id) {
   S.currentPL = pl;
   S.trackIdx = -1;
   S.shuffle = pl.shuffle||false;
+  // Capture the order this playlist is in RIGHT NOW, the first time we ever
+  // open it this session, as the "original" order Reset Order should return
+  // to. This makes Reset Order meaningful after a manual drag too, not just
+  // after shuffling — previously there was nothing to reset back TO.
+  if (!_originalOrderByPL[pl.id]) {
+    _originalOrderByPL[pl.id] = (pl.tracks||[]).map(t=>t.id);
+  }
 
   document.getElementById('pl-title').textContent = pl.name;
   const timerStr = pl.timer ? `${pl.timer}s timer` : (S.settings.timer ? `${S.settings.timer}s timer` : 'Full songs');
@@ -3188,6 +3206,7 @@ function wireColResize(headId) {
 }
 
 let dragSrcIdx = null, dragSrcOrigIdx = null;
+const _originalOrderByPL = {}; // plId -> array of track IDs in their first-seen-this-session order
 let selectedTrackKey = null; // format: "playlist:<id>" or "library:<id>"
 
 function selectRow(context, id, rowEl) {
@@ -3324,6 +3343,10 @@ function renderTrackList() {
         else if (S.trackIdx > dragSrcOrigIdx && S.trackIdx <= insertAt) S.trackIdx--;
         else if (S.trackIdx < dragSrcOrigIdx && S.trackIdx >= insertAt) S.trackIdx++;
         savePL(S.currentPL); // now reaches Firebase with the CORRECT order
+        // A manual drag also means the order no longer matches what it
+        // started as — show Reset Order here too, not just for shuffle.
+        const resetBtn = document.getElementById('btn-reset-order');
+        if (resetBtn) resetBtn.style.display = '';
       }
       dragSrcIdx = null; dragSrcOrigIdx = null;
       renderTrackList();
@@ -4522,7 +4545,22 @@ function resetOrder() {
   if (btn) btn.classList.remove('active');
   if (nav) nav.classList.remove('active');
   if (resetBtn) resetBtn.style.display = 'none';
-  if (S.currentPL) { S.currentPL.shuffle=false; savePL(S.currentPL); }
+
+  // Restore manual drag order too, not just clear shuffle — using the
+  // order captured the first time this playlist was opened this session.
+  if (S.currentPL) {
+    const original = _originalOrderByPL[S.currentPL.id];
+    if (original && original.length) {
+      const byId = new Map(S.currentPL.tracks.map(t=>[t.id,t]));
+      const restored = original.map(id=>byId.get(id)).filter(Boolean);
+      // Include any tracks added since the snapshot was taken, appended after
+      const knownIds = new Set(original);
+      const addedSince = S.currentPL.tracks.filter(t=>!knownIds.has(t.id));
+      S.currentPL.tracks = [...restored, ...addedSince];
+    }
+    S.currentPL.shuffle=false;
+    savePL(S.currentPL);
+  }
   renderTrackList();
   toast('↺ Order restored');
 }
@@ -5206,7 +5244,7 @@ function renderPlaylistsGrid() {
     const canEdit = plCanEdit(pl);
     return `<div class="pl-grid-card ${activePLId===pl.id?'active':''}" data-pl-id="${pl.id}" data-pl-scope="${pl.scope}"
       draggable="${canEdit}" ondblclick="selectPL('${pl.id}');showView('player')">
-      <div class="pl-grid-art">${pl.artUrl?`<img src="${esc(pl.artUrl)}" loading="lazy">`:(pl.type==='bingo'?'🎱':'♪')}</div>
+      <div class="pl-grid-art">${pl.artUrl?`<img src="${esc(pl.artUrl)}" loading="lazy" draggable="false">`:(pl.type==='bingo'?'🎱':'♪')}</div>
       <div class="pl-grid-info">
         <div class="pl-grid-name">${esc(pl.name)}</div>
         <div class="pl-grid-meta">${cnt} track${cnt!==1?'s':''} · ${pl.type==='bingo'?'Bingo':'General'}</div>
@@ -5289,13 +5327,14 @@ function saveBulkState() {
       };
     });
     localStorage.setItem('bella_bulk_state', JSON.stringify(slim));
-  } catch(e) {}
+    console.log('[Bulk add] Saved state for', Object.keys(slim).length, 'playlist(s):', Object.keys(slim));
+  } catch(e) { console.warn('[Bulk add] Save FAILED:', e); }
 }
 
 function loadBulkState() {
   try {
     const raw = localStorage.getItem('bella_bulk_state');
-    if (!raw) return;
+    if (!raw) { console.log('[Bulk add] No saved state found in localStorage on load'); return; }
     const slim = JSON.parse(raw);
     Object.keys(slim).forEach(plId => {
       const s = slim[plId];
@@ -5308,7 +5347,8 @@ function loadBulkState() {
         }))
       };
     });
-  } catch(e) {}
+    console.log('[Bulk add] Restored state for', Object.keys(slim).length, 'playlist(s):', Object.keys(slim));
+  } catch(e) { console.warn('[Bulk add] Load FAILED:', e); }
 }
 
 function openBulkAdd() {

@@ -2559,6 +2559,14 @@ function showView(v) {
   const cvb = document.getElementById('col-vis-bar');
   if (cvb) cvb.style.display = (v==='player'||v==='library') ? 'flex' : 'none';
   if (v==='playlists') renderPlaylistsGrid();
+  // Leaving the playlist's own view means no playlist should still show as
+  // "selected" in the sidebar/grid — only the player view (where a playlist's
+  // tracks are actually shown) should keep that highlight.
+  if (v !== 'player' && S.currentPL) {
+    S.currentPL = null;
+    renderSidePlaylists();
+    if (document.getElementById('view-playlists')?.classList.contains('active')) renderPlaylistsGrid();
+  }
 }
 
 // ═══════════════ PLAYLISTS ═══════════════
@@ -2617,8 +2625,10 @@ async function loadPlaylists() {
         const ordered = localOrderIds.map(id=>byId.get(id)).filter(Boolean);
         const remaining = merged.filter(p=>!localOrderIds.includes(p.id));
         merged = [...ordered, ...remaining];
+        console.log('[Playlist order] Loaded using localStorage order:', merged.map(p=>p.name).join(', '));
       } else {
         merged.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
+        console.log('[Playlist order] Loaded using Firebase order (no local backup found):', merged.map(p=>p.name).join(', '));
       }
 
       // Re-merge artUrls stripped before saving to Firebase, AND prefer the
@@ -2739,16 +2749,17 @@ function toggleSectionCollapse(scope) {
 
 async function savePlOrder() {
   // CRITICAL: assign p.order to every item BEFORE writing to localStorage —
-  // the previous version wrote localStorage first, so it always saved the
+  // a previous version wrote localStorage first, so it always saved the
   // OLD order values (or undefined), which is exactly what loadPlaylists()
-  // then trusted as the source of truth on the next load. That's why drag
-  // order never actually persisted: the one copy being read back was the
-  // one copy that never got updated.
+  // then trusted as the source of truth on the next load.
   S.playlists.forEach((p,i)=>{ p.order = i; });
-  try { localStorage.setItem('bella_playlists', JSON.stringify(S.playlists)); } catch(e){}
+  try {
+    localStorage.setItem('bella_playlists', JSON.stringify(S.playlists));
+    console.log('[Playlist order] Saved:', S.playlists.map(p=>p.name+'='+p.order).join(', '));
+  } catch(e){ console.warn('[Playlist order] localStorage save FAILED:', e); }
   if (db) S.playlists.forEach((p)=>{
     if (!plCanEdit(p)) return; // don't write order for items we can't edit (read-only admin/shared for hosts)
-    db.ref(plDbPath(p)+'/order').set(p.order).catch(()=>{});
+    db.ref(plDbPath(p)+'/order').set(p.order).catch(e=>console.warn('[Playlist order] Firebase save failed for', p.name, e));
   });
 }
 
@@ -3189,9 +3200,32 @@ function isRowSelected(context, id) {
   return selectedTrackKey === context + ':' + id;
 }
 
+// Playlists historically stored a snapshot/copy of each track at the moment
+// it was added, so later library updates (embedded art found, tags fixed,
+// iTunes art resolved) never reached tracks already sitting in a playlist —
+// that's exactly why art only showed up for songs added AFTER the fact.
+// This keeps every playlist's track data in sync with the library by ID,
+// without changing how playlists are stored — just refreshing the fields
+// that come from the library before every render.
+function syncPlaylistTracksFromLibrary(pl) {
+  if (!pl?.tracks?.length) return;
+  const byId = new Map(S.library.map(t => [t.id, t]));
+  pl.tracks.forEach(pt => {
+    const live = byId.get(pt.id);
+    if (!live) return; // file no longer in library — keep the playlist's copy as-is
+    pt.title  = live.title;
+    pt.artist = live.artist;
+    pt.album  = live.album;
+    pt.bpm    = live.bpm;
+    pt.duration = live.duration;
+    pt.artUrl = live.artUrl;
+  });
+}
+
 function renderTrackList() {
   const wrap = document.getElementById('track-list-wrap');
   const pl = S.currentPL;
+  syncPlaylistTracksFromLibrary(pl);
   const sortBar = document.getElementById('pl-sort-bar');
   if (sortBar) sortBar.style.display = pl?.tracks?.length ? 'flex' : 'none';
 
@@ -3748,7 +3782,9 @@ async function enrichTracksInBackground(ids) {
   }
 
   flushMetaWrites();
+  S.playlists.forEach(syncPlaylistTracksFromLibrary); // push fresh tags/art into every playlist, not just the open one
   renderLibrary();
+  if (S.currentPL) renderTrackList();
   toast('Library refined ✓');
 
   if (artQueue.length) {
@@ -3852,6 +3888,8 @@ async function fetchArtInBackground(ids) {
     renderLibrary();
   }
   flushMetaWrites();
+  S.playlists.forEach(syncPlaylistTracksFromLibrary); // newly-fetched iTunes art reaches every playlist too
+  if (S.currentPL) renderTrackList();
   if (ids.length) hideLoadProgress();
   artFetchRunning = false;
   if (S._pendingArt?.length) {
@@ -4129,7 +4167,8 @@ function doAddToPL(trackId, plId) {
   const pl=S.playlists.find(p=>p.id===plId); if(!pl) return;
   if(!pl.tracks) pl.tracks=[];
   if(pl.tracks.some(x=>x.id===trackId)){toast('Already in '+pl.name);return;}
-  pl.tracks.push({...t});
+  pl.tracks.push({...t}); // snapshot at add-time is fine — syncPlaylistTracksFromLibrary
+                            // keeps it current automatically on every future render/enrichment
   savePL(pl);
   if(S.currentPL?.id===plId) renderTrackList();
   toast('Added "'+t.title+'" to '+pl.name);
@@ -5297,10 +5336,14 @@ function openBulkAdd() {
 function normBulk(s) {
   let x = s.toLowerCase();
   // Strip trailing parenthetical/bracketed qualifiers entirely:
-  // (Radio Edit), (Remix), (feat. X), [Live], (Explicit), (Clean), etc.
+  // (Radio Edit), (Remix), (feat. X), [Live], (Explicit), (Clean), (E), etc.
   x = x.replace(/\s*[\(\[][^)\]]*[\)\]]\s*/g, ' ');
   // Strip a trailing "feat./ft./featuring ..." even without parens
   x = x.replace(/\s*[-–—]?\s*(feat\.?|ft\.?|featuring)\s+.+$/,'');
+  // "&" and "and" should be interchangeable — normalize both to the same
+  // token BEFORE punctuation stripping (otherwise "&" just disappears
+  // while "and" stays a literal word, so "Salt & Pepa" != "Salt and Pepa").
+  x = x.replace(/\s*&\s*/g, ' and ');
   return x
     .replace(/^(the|a|an)\s+/,'')
     .replace(/[‘’`´ʼ]/g,"'")
@@ -5317,8 +5360,12 @@ function runBulkMatch() {
   const inPL = new Set((S.currentPL?.tracks||[]).map(t=>t.id));
 
   _bulkMatches = lines.map(line => {
-    // Parse "Title – Artist" or "Title - Artist" or just "Title"
-    const sep = line.match(/[–—―\-]{1,2}/);
+    // Parse "Title – Artist" or "Title - Artist" or just "Title".
+    // IMPORTANT: only split on a dash that has whitespace on both sides
+    // (the actual "Title - Artist" convention) — never on a bare hyphen
+    // that's part of a word, like "Salt-N-Pepa" or "T-Pain", which a
+    // loose match was incorrectly splitting mid-name.
+    const sep = line.match(/\s[–—―-]\s/);
     let title = line, artist = '';
     if (sep) {
       const idx = line.indexOf(sep[0]);

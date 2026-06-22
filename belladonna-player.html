@@ -879,7 +879,7 @@ html, body {
   display:flex; align-items:center; gap:10px;
   padding:8px 12px; border-radius:var(--radius);
   cursor:pointer; transition:var(--transition);
-  font-family:var(--font-heading); font-size:10px; letter-spacing:.1em;
+  font-family:var(--font-heading); font-size:var(--nav-font-size,10px); letter-spacing:.1em;
   color:var(--text2); border:1px solid transparent; margin-bottom:2px;
 }
 .nav-item:hover { background:var(--surface2); color:var(--text); }
@@ -2108,12 +2108,22 @@ html, body {
               </div>
               <div class="settings-row">
                 <div>
-                  <div class="settings-label">Sidebar Font Size</div>
-                  <div class="settings-label-sub">Playlist names & nav — separate from track lists</div>
+                  <div class="settings-label">Playlist Name Font Size</div>
+                  <div class="settings-label-sub">Names in the sidebar playlist list</div>
                 </div>
                 <div class="range-wrap">
                   <input type="range" class="range-input" id="set-fontsidebar" min="10" max="18" step="1" value="13" oninput="saveSetting('fontSizeSidebar',this.value)">
                   <span class="range-val" id="val-fontsidebar">13px</span>
+                </div>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Nav Menu Font Size</div>
+                  <div class="settings-label-sub">Now Playing, Library, Shuffle, Settings labels</div>
+                </div>
+                <div class="range-wrap">
+                  <input type="range" class="range-input" id="set-fontnav" min="8" max="16" step="1" value="10" oninput="saveSetting('fontSizeNav',this.value)">
+                  <span class="range-val" id="val-fontnav">10px</span>
                 </div>
               </div>
             </div>
@@ -2465,7 +2475,7 @@ const S = {
   volume: 0.8,
   cuePoints: {}, // trackId -> {bingo, triviaS, triviaE} — GLOBAL default, set by anyone, visible to all
   cueOverrides: {}, // trackId -> {bingo, triviaS, triviaE} — PERSONAL to this host only
-  settings: { crossfade: 8, timer: 0, bpmMatch: true, cleanSkip: true, artEnabled: true, artSize: 44, fontSizeTable: 12, fontSizeSidebar: 13 },
+  settings: { crossfade: 8, timer: 0, bpmMatch: true, cleanSkip: true, artEnabled: true, artSize: 44, fontSizeTable: 12, fontSizeSidebar: 13, fontSizeNav: 10 },
   sessionId: null,
   sessionStart: null,
   _allSessions: [],
@@ -2815,13 +2825,24 @@ const PL_SECTIONS = [
   { scope:'personal',         label:'My Playlists',         icon:'☆', dragGroup:'personal' }
 ];
 
+// Handles clicks on sidebar playlist items. We use pointerup instead of
+// onclick because onclick is suppressed on draggable elements in Chromium/
+// Electron when the pointer moves even slightly — making playlists impossible
+// to select. pointerup always fires; we just check if it was a real drag.
+let _plDragMoved = false;
+function _plItemPointerUp(e, plId) {
+  if (_plDragMoved) { _plDragMoved = false; return; } // was a drag, not a tap
+  if (e.button !== undefined && e.button !== 0) return; // ignore right-click
+  selectPL(plId);
+}
+
 function renderPLItem(p, i) {
   const activePLId = S.currentPL?.id === '__library__' ? null : S.currentPL?.id;
   const canEdit = plCanEdit(p);
   const sharedTag = p.scope === 'shared' && p.sharedBy ? '<span style="font-size:9px;color:var(--text3);font-style:italic;margin-left:4px;">by '+esc(p.sharedBy)+'</span>' : '';
   return '<div class="pl-item '+(activePLId===p.id?'active':'')+'" '+
     'draggable="'+(canEdit?'true':'false')+'" data-pl-id="'+p.id+'" data-pl-idx="'+i+'" data-pl-scope="'+p.scope+'" '+
-    'onclick="selectPL(\''+p.id+'\')" '+
+    'onpointerup="_plItemPointerUp(event,\''+p.id+'\')" '+
     'oncontextmenu="showPLMenu(event,\''+p.id+'\')">'+
     (canEdit ? '<span style="cursor:grab;opacity:0.4;margin-right:2px;font-size:13px;">⠿</span>' : '<span style="width:13px;display:inline-block;"></span>') +
     '<span>'+(p.type==='bingo'?'◈':'♪')+'</span>'+
@@ -2864,6 +2885,7 @@ function renderSidePlaylists() {
   let dragIdx = null, dragScope = null;
   el.querySelectorAll('.pl-item[draggable="true"]').forEach(row => {
     row.addEventListener('dragstart', e => {
+      _plDragMoved = true; // so pointerup knows this was a drag, not a click
       dragIdx = S.playlists.findIndex(p=>p.id===row.dataset.plId);
       dragScope = row.dataset.plScope;
       row.style.opacity='0.4'; e.dataTransfer.effectAllowed='move';
@@ -4788,8 +4810,11 @@ function buildJukeboxWindow() {
     .jw-next-label{font-family:'Cinzel',serif;font-size:8px;letter-spacing:0.3em;text-transform:uppercase;color:rgba(255,255,255,0.25);margin-bottom:4px;}
     .jw-next-val{font-size:13px;color:rgba(255,255,255,0.4);font-style:italic;}
     body>*{position:relative;z-index:1;}
+    #jw-fs-btn{position:fixed;top:14px;right:16px;background:none;border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.35);font-size:14px;padding:4px 8px;border-radius:6px;cursor:pointer;z-index:10;transition:all .2s;}
+    #jw-fs-btn:hover{background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.7);border-color:rgba(255,255,255,0.3);}
   </style></head><body>
   <div id="jw-bg"></div>
+  <button id="jw-fs-btn" onclick="toggleJwFullscreen()" title="Fullscreen">⛶</button>
   <div class="jw-brand">Belladonna Audio Alchemies</div>
   <div class="jw-art" id="jw-art">${art ? '<img src="'+art+'">' : '<div class="jw-art-ph">💀</div>'}</div>
   <div class="jw-title" id="jw-title">${title}</div>
@@ -4798,6 +4823,21 @@ function buildJukeboxWindow() {
     <div class="jw-next-label">Up Next</div>
     <div class="jw-next-val" id="jw-next-val"></div>
   </div>
+  <script>
+  function toggleJwFullscreen() {
+    const btn = document.getElementById('jw-fs-btn');
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(()=>{ if(btn) btn.textContent='✕'; }).catch(()=>{});
+    } else {
+      document.exitFullscreen().then(()=>{ if(btn) btn.textContent='⛶'; }).catch(()=>{});
+    }
+  }
+  document.addEventListener('fullscreenchange', () => {
+    const btn = document.getElementById('jw-fs-btn');
+    if (btn) btn.textContent = document.fullscreenElement ? '✕' : '⛶';
+  });
+  document.addEventListener('dblclick', toggleJwFullscreen);
+  <\/script>
   </body></html>`);
   jukeboxWin.document.close();
 }
@@ -4998,6 +5038,7 @@ function applySettings() {
   const ase=document.getElementById('set-artsize'); if(ase){ase.value=s.artSize||44; document.getElementById('val-artsize').textContent=(s.artSize||44)+'px';}
   const fte=document.getElementById('set-fonttable'); if(fte){fte.value=s.fontSizeTable||12; document.getElementById('val-fonttable').textContent=(s.fontSizeTable||12)+'px';}
   const fse=document.getElementById('set-fontsidebar'); if(fse){fse.value=s.fontSizeSidebar||13; document.getElementById('val-fontsidebar').textContent=(s.fontSizeSidebar||13)+'px';}
+  const fne=document.getElementById('set-fontnav'); if(fne){fne.value=s.fontSizeNav||10; document.getElementById('val-fontnav').textContent=(s.fontSizeNav||10)+'px';}
   applyDisplaySettings();
 }
 
@@ -5026,12 +5067,14 @@ function toggleTheme() {
 
 function applyDisplaySettings() {
   const s = S.settings;
-  const artSize   = s.artSize       || 44;
+  const artSize   = s.artSize        || 44;
   const tableFont = s.fontSizeTable  || 12;
   const sideFont  = s.fontSizeSidebar|| 13;
+  const navFont   = s.fontSizeNav    || 10;
 
   document.documentElement.style.setProperty('--track-font-size',  tableFont+'px');
   document.documentElement.style.setProperty('--sidebar-font-size', sideFont+'px');
+  document.documentElement.style.setProperty('--nav-font-size',    navFont+'px');
   document.documentElement.style.setProperty('--art-size', artSize+'px');
 
   // Row height should flex with art size so nothing gets clipped
@@ -5057,6 +5100,7 @@ async function saveSetting(k, v) {
   if(k==='artSize'){S.settings.artSize=v;document.getElementById('val-artsize').textContent=v+'px';applyDisplaySettings();}
   if(k==='fontSizeTable'){S.settings.fontSizeTable=v;document.getElementById('val-fonttable').textContent=v+'px';applyDisplaySettings();}
   if(k==='fontSizeSidebar'){S.settings.fontSizeSidebar=v;document.getElementById('val-fontsidebar').textContent=v+'px';applyDisplaySettings();}
+  if(k==='fontSizeNav'){S.settings.fontSizeNav=v;document.getElementById('val-fontnav').textContent=v+'px';applyDisplaySettings();}
   if(db){ try{await db.ref('player/users/' + S.user.username + '/settings/playback').set(S.settings);}catch(e){} }
 }
 

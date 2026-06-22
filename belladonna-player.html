@@ -484,17 +484,14 @@ html, body {
   display:grid; grid-template-columns:1fr auto 1fr;
   align-items:center; padding:0 20px; gap:12px;
   flex-shrink:0; position:relative;
-  /* hidden until a track is played — pointer-events:none prevents it
-     from blocking clicks on sidebar/content while invisible */
+  /* hidden until a track is played */
   transform:translateY(100%);
   opacity:0;
   transition:none;
-  pointer-events:none;
 }
 .now-playing-bar.visible {
   transform:translateY(0);
   opacity:1;
-  pointer-events:auto;
   animation:npb-slide-up 0.35s cubic-bezier(.22,.8,.32,1) forwards;
 }
 .now-playing-bar::before {
@@ -2651,14 +2648,10 @@ function enterApp() {
 
   // Always try to restore folder — delay slightly so DOM is ready
   setTimeout(tryRestoreFolder, 300);
-  // Wait for the library to actually have tracks before restoring bulk-add
-  // state — a blind timeout risks running before a large folder finishes
-  // loading, in which case every saved trackId would fail to resolve.
-  // Cap retries so this can't loop forever if a library genuinely never loads.
-  (function waitForLibraryThenLoadBulkState(attempt) {
-    if (S.library.length > 0 || attempt > 20) { loadBulkState(); return; }
-    setTimeout(() => waitForLibraryThenLoadBulkState(attempt+1), 300);
-  })(0);
+  // Load bulk state immediately — rawText always restores regardless of library.
+  // If the library isn't loaded yet, match results will be re-run when
+  // the user opens bulk add (openBulkAdd re-runs runBulkMatch if library exists).
+  loadBulkState();
 
   // Bingo bridge setup
   loadBingoCategories().then(() => {
@@ -2987,7 +2980,7 @@ async function savePlaylistEdit() {
     S.currentPL.name  = name;
     S.currentPL.type  = type;
     document.getElementById('pl-title').textContent = name;
-    document.getElementById('topbar-title').textContent = name;
+    const _tt=document.getElementById('topbar-title'); if(_tt) _tt.textContent = name;
     const timer = pl.timer || 0;
     const timerStr = timer ? timer+'s timer' : (S.settings.timer ? S.settings.timer+'s timer' : 'Full songs');
     document.getElementById('pl-meta').textContent = `${type==='bingo'?'◈ Bingo':'♪ General'} · ${(pl.tracks||[]).length} tracks · ${timerStr}`;
@@ -3001,7 +2994,7 @@ function renamePL(id) {
   const name=prompt('Rename playlist:',pl.name);
   if(!name||!name.trim()||name.trim()===pl.name) return;
   pl.name=name.trim(); savePL(pl); renderSidePlaylists();
-  if(S.currentPL?.id===id){ document.getElementById('pl-title').textContent=pl.name; document.getElementById('topbar-title').textContent=pl.name; }
+  if(S.currentPL?.id===id){ document.getElementById('pl-title').textContent=pl.name; const _tt2=document.getElementById('topbar-title'); if(_tt2) _tt2.textContent=pl.name; }
   toast('Renamed to "'+pl.name+'"');
 }
 
@@ -3087,7 +3080,7 @@ async function selectPL(id) {
   if (editBtn) editBtn.style.display = S.isAdmin ? '' : 'none';
   if (bulkBtn) bulkBtn.style.display = S.isAdmin ? '' : 'none';
   updateBulkMissingBadge();
-  document.getElementById('topbar-title').textContent = pl.name;
+  const _tt3=document.getElementById('topbar-title'); if(_tt3) _tt3.textContent = pl.name;
 
   document.getElementById('btn-shuffle').classList.toggle('active', S.shuffle);
   S.plSearch=''; S.plSort='index'; S.plSortDir=1;
@@ -5571,56 +5564,68 @@ let _bulkStateByPL = {}; // plId -> { rawText, matches }
 
 function saveBulkState() {
   try {
-    // Strip track objects down to id only for storage
     const slim = {};
     Object.keys(_bulkStateByPL).forEach(plId => {
       const s = _bulkStateByPL[plId];
       slim[plId] = {
         rawText: s.rawText,
-        matches: s.matches.map(m => ({
+        matches: (s.matches||[]).map(m => ({
           line: m.line, title: m.title, artist: m.artist,
           status: m.status, trackId: m.track?.id || null
         }))
       };
     });
     localStorage.setItem('bella_bulk_state', JSON.stringify(slim));
-    console.log('[Bulk add] Saved state for', Object.keys(slim).length, 'playlist(s):', Object.keys(slim));
+    console.log('[Bulk add] Saved state for', Object.keys(slim).length, 'playlist(s)');
   } catch(e) { console.warn('[Bulk add] Save FAILED:', e); }
 }
 
 function loadBulkState() {
+  // Always restore rawText regardless of library state — the text list
+  // is the thing that must survive forever. Match results are re-resolved
+  // against the library if available, or left as stubs if not.
   try {
     const raw = localStorage.getItem('bella_bulk_state');
-    if (!raw) { console.log('[Bulk add] No saved state found in localStorage on load'); return; }
+    if (!raw) return;
     const slim = JSON.parse(raw);
     Object.keys(slim).forEach(plId => {
       const s = slim[plId];
       _bulkStateByPL[plId] = {
         rawText: s.rawText,
-        matches: s.matches.map(m => ({
+        matches: (s.matches||[]).map(m => ({
           line: m.line, title: m.title, artist: m.artist,
           status: m.status,
-          track: m.trackId ? S.library.find(t => t.id === m.trackId) || null : null
+          track: m.trackId ? (S.library.find(t => t.id === m.trackId) || null) : null
         }))
       };
     });
-    console.log('[Bulk add] Restored state for', Object.keys(slim).length, 'playlist(s):', Object.keys(slim));
+    console.log('[Bulk add] Restored state for', Object.keys(slim).length, 'playlist(s)');
   } catch(e) { console.warn('[Bulk add] Load FAILED:', e); }
 }
 
 function openBulkAdd() {
   if (!S.currentPL) { toast('Select a playlist first'); return; }
   const saved = _bulkStateByPL[S.currentPL.id];
-  if (saved) {
-    // Restore saved state for this playlist — re-run match so status reflects current library/playlist
+  if (saved?.rawText) {
+    // Always restore the raw text first — this is what must survive forever
     document.getElementById('bulk-input').value = saved.rawText;
-    _bulkMatches = saved.matches;
-    // Re-check which are now in the playlist
-    const inPL = new Set((S.currentPL.tracks||[]).map(t=>t.id));
-    _bulkMatches.forEach(m => {
-      if (m.track) m.status = inPL.has(m.track.id) ? 'already-in' : 'matched';
-    });
-    renderBulkResults();
+    if (S.library.length && saved.rawText.trim()) {
+      // Library is loaded — re-run the full match so results are fresh and
+      // reflect any new songs added to the library since last time
+      runBulkMatch();
+    } else if (saved.matches?.length) {
+      // Library not loaded yet — show saved match results as-is
+      _bulkMatches = saved.matches;
+      const inPL = new Set((S.currentPL.tracks||[]).map(t=>t.id));
+      _bulkMatches.forEach(m => {
+        if (m.track) m.status = inPL.has(m.track.id) ? 'already-in' : 'matched';
+      });
+      renderBulkResults();
+    } else {
+      // Text exists but no matches yet (library was empty when saved)
+      document.getElementById('bulk-results').innerHTML = '<div style="color:var(--text3);font-size:12px;font-style:italic;padding:8px 0;">Upload your music folder first, then matches will appear automatically.</div>';
+      document.getElementById('bulk-add-btn').style.display = 'none';
+    }
   } else {
     document.getElementById('bulk-input').value = '';
     document.getElementById('bulk-results').innerHTML = '';

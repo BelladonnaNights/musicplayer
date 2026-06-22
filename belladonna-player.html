@@ -2622,6 +2622,21 @@ async function doLogout() {
 
 // ═══════════════ APP ENTER ═══════════════
 function enterApp() {
+  // Clear any old bella_library entries that may contain artUrl and be eating
+  // up localStorage quota — this was the root cause of playlist order saves
+  // silently failing with QuotaExceededError.
+  try {
+    const oldLib = localStorage.getItem('bella_library');
+    if (oldLib) {
+      const parsed = JSON.parse(oldLib);
+      if (parsed.length && parsed[0].artUrl !== undefined) {
+        // Old format with artUrl — rewrite without it to reclaim space
+        const slim = parsed.map(({artUrl, ...rest}) => rest);
+        localStorage.setItem('bella_library', JSON.stringify(slim));
+        console.log('[enterApp] Migrated bella_library to strip artUrl, reclaimed space');
+      }
+    }
+  } catch(e) {}
   document.getElementById('screen-login').classList.remove('active');
   document.getElementById('screen-app').classList.add('active');
 
@@ -4052,12 +4067,17 @@ async function fetchArtInBackground(ids) {
 
 function saveLibraryMeta() {
   try {
+    // artUrl intentionally excluded — embedded art is base64 and can be
+    // hundreds of KB per track. With 300+ tracks this easily exceeds the
+    // 5-10MB localStorage quota, which then silently blocks ALL other
+    // localStorage writes including playlist order saves.
+    // Art is re-read from files on every folder load anyway.
     const meta = S.library.map(t => ({
       id:t.id, filename:t.filename, title:t.title, artist:t.artist,
-      album:t.album, duration:t.duration, bpm:t.bpm, artUrl:t.artUrl
+      album:t.album, duration:t.duration, bpm:t.bpm
     }));
     localStorage.setItem('bella_library', JSON.stringify(meta));
-  } catch(e){}
+  } catch(e){ console.warn('[saveLibraryMeta] localStorage write failed:', e); }
 }
 
 function loadLibraryMeta() {

@@ -3983,19 +3983,28 @@ async function enrichTrackMetadata(file, existingTrack) {
     }
     Object.assign(t,tags);
   } catch(e){}
-  // Only fall back to Audio() decode if TLEN wasn't in the ID3 tags.
-  // Most files tagged by iTunes/Serato/Mp3tag include TLEN, making this
-  // instant. Files without TLEN still get duration via audio decode.
+  // Fall back to Audio() decode if TLEN wasn't in the ID3 tags.
+  // Safari requires the audio element to be attached to the document to
+  // reliably fire onloadedmetadata for blob URLs — detached Audio() objects
+  // are lazy-decoded and often never fire the event.
   if (!t.duration) {
     try {
-      const url=URL.createObjectURL(file);
-      const a=new Audio();
+      const url = URL.createObjectURL(file._blob || file);
+      const a = document.createElement('audio');
+      a.style.cssText = 'position:absolute;width:0;height:0;opacity:0;pointer-events:none;';
+      a.preload = 'metadata';
+      document.body.appendChild(a);
       await Promise.race([
-        new Promise(res=>{ a.src=url; a.onloadedmetadata=()=>{t.duration=a.duration;res();}; a.onerror=res; }),
-        new Promise(res=>setTimeout(res, 4000))
+        new Promise(res => {
+          a.onloadedmetadata = () => { t.duration = a.duration; res(); };
+          a.onerror = res;
+          a.src = url;
+        }),
+        new Promise(res => setTimeout(res, 5000))
       ]);
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch(e){}
+    } catch(e) {}
   }
   return t;
 }

@@ -287,7 +287,7 @@ html, body {
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 
-.topbar-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.topbar-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; margin-left:auto; }
 
 /* ═══════════════ VIEWS ═══════════════ */
 .view { display:none; flex:1; flex-direction:column; overflow:hidden; }
@@ -991,7 +991,7 @@ html, body {
   white-space:nowrap;
 }
 
-.topbar-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.topbar-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; margin-left:auto; }
 
 /* ═══════════════ VIEWS ═══════════════ */
 .view { display:none; flex:1; flex-direction:column; overflow:hidden; }
@@ -2552,6 +2552,7 @@ async function logSession(user, status) {
 }
 
 async function doLogout() {
+  unregisterActiveSession(); // remove from public "what's playing" registry
   if (S.sessionId && db) {
     const mins = Math.round((new Date() - S.sessionStart)/60000);
     try { await db.ref('player/sessions/' + S.sessionId).update({ status:'ended', logoutTime:new Date().toISOString(), durationMinutes:mins }); } catch(e){}
@@ -5896,6 +5897,9 @@ function toggleBingoLink() {
       S.bingoSessionKey = S.bingoCategoryId + '_' + Math.random().toString(36).slice(2, 8);
     }
     initBingoDb();
+    setTimeout(registerActiveSession, 500); // slight delay so initBingoDb can finish
+  } else {
+    unregisterActiveSession(); // tell the landing page this board is no longer in use
   }
   updateBingoLinkUI();
   toast(S.bingoLinked ? '🎱 Bingo link active!' : 'Bingo link off');
@@ -5926,17 +5930,51 @@ function updateBingoLinkUI() {
   }
 }
 
+function registerActiveSession() {
+  if (!S.bingoLinked || !S.bingoSessionKey) return;
+  const dbRef = db || S.bingoDb;
+  if (!dbRef) return;
+  const catName = S.bingoCategories.find(c => c.id === S.bingoCategoryId)?.title || S.bingoCategoryId || '';
+  dbRef.ref('sessions/active/' + S.bingoSessionKey).set({
+    categoryId:   S.bingoCategoryId,
+    categoryName: catName,
+    at:           Date.now()
+  }).catch(e => console.warn('[Bingo bridge] Could not register active session:', e));
+}
+
+function unregisterActiveSession() {
+  if (!S.bingoSessionKey) return;
+  const dbRef = db || S.bingoDb;
+  if (!dbRef) return;
+  dbRef.ref('sessions/active/' + S.bingoSessionKey).remove()
+    .catch(e => console.warn('[Bingo bridge] Could not unregister session:', e));
+}
+
 function pingBingoApp(track) {
   if (!S.bingoLinked || !S.bingoSessionKey) return;
   const dbRef = db || S.bingoDb;
   if (!dbRef) return;
   const path = 'sessions/' + S.bingoSessionKey + '/nowPlaying';
-  dbRef.ref(path).set({
-    title:  track.title  || track.filename || '',
-    artist: track.artist || '',
-    at:     Date.now()
+  // Write nowPlaying AND update the active-sessions registry simultaneously
+  const catName = S.bingoCategories.find(c => c.id === S.bingoCategoryId)?.title || S.bingoCategoryId || '';
+  dbRef.ref().update({
+    [path]: {
+      title:  track.title  || track.filename || '',
+      artist: track.artist || '',
+      at:     Date.now()
+    },
+    ['sessions/active/' + S.bingoSessionKey]: {
+      categoryId:   S.bingoCategoryId,
+      categoryName: catName,
+      nowPlaying: {
+        title:  track.title  || track.filename || '',
+        artist: track.artist || '',
+        at:     Date.now()
+      },
+      at: Date.now()
+    }
   }).then(() => {
-    console.log('[Bingo bridge] Pinged nowPlaying:', path, track.title);
+    console.log('[Bingo bridge] Pinged nowPlaying + active registry:', track.title);
   }).catch(e => console.warn('[Bingo bridge] Write failed:', e));
 }
 
@@ -5960,6 +5998,7 @@ function checkBingoLaunchParam() {
   S.bingoSessionKey  = sessionKey;
   S.bingoLinked = true;
   initBingoDb();
+  setTimeout(registerActiveSession, 500);
   updateBingoLinkUI();
   toast('◈ Bingo linked!', 3000);
   console.log('[Bingo bridge] Player linked. Session key:', sessionKey);
@@ -5979,6 +6018,7 @@ function checkBingoLaunchParam() {
   }
 }
 
+window.addEventListener('beforeunload', () => { unregisterActiveSession(); });
 document.addEventListener('mousemove', e => { window._lastX=e.clientX; window._lastY=e.clientY; });
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;

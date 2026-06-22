@@ -484,14 +484,17 @@ html, body {
   display:grid; grid-template-columns:1fr auto 1fr;
   align-items:center; padding:0 20px; gap:12px;
   flex-shrink:0; position:relative;
-  /* hidden until a track is played */
+  /* hidden until a track is played — pointer-events:none prevents it
+     from blocking clicks on sidebar/content while invisible */
   transform:translateY(100%);
   opacity:0;
   transition:none;
+  pointer-events:none;
 }
 .now-playing-bar.visible {
   transform:translateY(0);
   opacity:1;
+  pointer-events:auto;
   animation:npb-slide-up 0.35s cubic-bezier(.22,.8,.32,1) forwards;
 }
 .now-playing-bar::before {

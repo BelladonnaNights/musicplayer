@@ -1964,6 +1964,9 @@ html, body {
               <div class="admin-card-title">👤 Host Accounts
                 <button class="btn-sm" onclick="openModal('modal-new-user')" style="font-size:9px;padding:4px 10px;">+ Add</button>
               </div>
+              <input type="text" id="user-search" placeholder="Search hosts…"
+                style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);padding:7px 12px;color:var(--text);font-family:var(--font);font-size:12px;outline:none;margin-bottom:10px;box-sizing:border-box;"
+                oninput="filterUsers(this.value)">
               <table class="user-table">
                 <thead><tr><th>Name</th><th>Role</th><th>Status</th><th></th></tr></thead>
                 <tbody id="adm-users"></tbody>
@@ -2016,9 +2019,14 @@ html, body {
             <div class="admin-card" style="grid-column:1/-1">
               <div class="admin-card-title">
                 📋 Session History
-                <select class="select-input" id="log-filter" onchange="filterLog()" style="width:auto;padding:4px 10px;font-size:11px;">
-                  <option value="">All Users</option>
-                </select>
+                <div style="display:flex;gap:6px;align-items:center;margin-left:auto;">
+                  <input type="text" id="log-search" placeholder="Search…"
+                    style="background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);padding:4px 10px;color:var(--text);font-family:var(--font);font-size:11px;outline:none;width:120px;"
+                    oninput="filterLog()">
+                  <select class="select-input" id="log-filter" onchange="filterLog()" style="width:auto;padding:4px 10px;font-size:11px;">
+                    <option value="">All Users</option>
+                  </select>
+                </div>
               </div>
               <div class="session-log" id="adm-log"></div>
             </div>
@@ -2259,6 +2267,34 @@ html, body {
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeModal('modal-new-user')">Cancel</button>
       <button class="btn-save" onclick="createUser()">Create Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Host Account -->
+<div class="overlay" id="modal-edit-user">
+  <div class="modal">
+    <div class="modal-title">Edit Host Account</div>
+    <input type="hidden" id="eu-id">
+    <div class="field"><label class="field-label">Display Name</label><input class="field-input" id="eu-name" placeholder="e.g. Eddy"></div>
+    <div class="field"><label class="field-label">New Password <span style="color:var(--text3);font-weight:normal;">(leave blank to keep current)</span></label><input class="field-input" id="eu-pass" type="password" placeholder="New password…"></div>
+    <div class="field">
+      <label class="field-label">Role</label>
+      <select class="field-input" id="eu-role">
+        <option value="host">host</option>
+        <option value="admin">admin</option>
+      </select>
+    </div>
+    <div class="settings-row" style="padding:8px 0 0;">
+      <div>
+        <div class="settings-label">Account Active</div>
+        <div class="settings-label-sub">Inactive accounts cannot log in</div>
+      </div>
+      <div class="toggle on" id="tog-eu-active" onclick="this.classList.toggle('on')"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal('modal-edit-user')">Cancel</button>
+      <button class="btn-save" onclick="saveUserEdit()">Save Changes</button>
     </div>
   </div>
 </div>
@@ -2558,6 +2594,15 @@ async function doLogout() {
     try { await db.ref('player/sessions/' + S.sessionId).update({ status:'ended', logoutTime:new Date().toISOString(), durationMinutes:mins }); } catch(e){}
   }
   pauseAudio();
+  // Detach admin live listeners — they must not fire for the next login
+  if (typeof _adminSessionsListener !== 'undefined' && _adminSessionsListener && db) {
+    db.ref('player/sessions').off('value', _adminSessionsListener);
+    _adminSessionsListener = null;
+  }
+  if (typeof _adminUsersListener !== 'undefined' && _adminUsersListener && db) {
+    db.ref('player/users').off('value', _adminUsersListener);
+    _adminUsersListener = null;
+  }
   S.user = null; S.currentPL = null; S.track = null;
   document.getElementById('screen-app').classList.remove('active');
   document.getElementById('screen-login').classList.add('active');
@@ -5035,38 +5080,58 @@ async function saveDefaultSetting(k, v) {
 }
 
 // ═══════════════ ADMIN ═══════════════
+let _adminSessionsListener = null;
+let _adminUsersListener     = null;
+let _adminCachedUsers       = [];
+
 async function loadAdminData() {
   if(!db) return;
-  try {
-    const [sSnap, uSnap, defSnap] = await Promise.all([
-      db.ref('player/sessions').once('value'),
-      db.ref('player/users').once('value'),
-      db.ref('player/settings/playback_default').once('value')
-    ]);
-    const all_sessions = Object.values(sSnap.val()||{});
-    const active_sessions = all_sessions.filter(s=>s.status==='active');
-    const users = Object.entries(uSnap.val()||{}).map(([id,u])=>({id,...u}));
-    // Sort sessions newest first, cap at 60
-    all_sessions.sort((a,b)=>new Date(b.loginTime)-new Date(a.loginTime));
-    const recent = all_sessions.slice(0,60);
-    S._allSessions=recent;
-    renderActiveSessions(active_sessions);
-    renderSessionLog(recent);
-    renderUsers(users,active_sessions);
-    const filter=document.getElementById('log-filter');
-    const names=[...new Set(recent.map(s=>s.displayName))];
-    filter.innerHTML='<option value="">All Users</option>'+names.map(n=>`<option value="${n}">${n}</option>`).join('');
 
-    // Populate default-settings controls
+  // ── Default settings (one-time read is fine here) ─────────────────────────
+  try {
+    const defSnap = await db.ref('player/settings/playback_default').once('value');
     const def = defSnap.val() || { crossfade:8, timer:0, bpmMatch:true, cleanSkip:true };
     const dxe=document.getElementById('def-xfade'), dte=document.getElementById('def-timer');
     if(dxe){ dxe.value=def.crossfade; document.getElementById('val-def-xfade').textContent=def.crossfade+'s'; }
     if(dte){ dte.value=def.timer; document.getElementById('val-def-timer').textContent=def.timer?def.timer+'s':'Off'; }
     document.getElementById('tog-def-bpm')?.classList.toggle('on', def.bpmMatch!==false);
     document.getElementById('tog-def-cleanskip')?.classList.toggle('on', def.cleanSkip!==false);
+  } catch(e){}
 
+  // ── Sessions: live listener so new logins appear immediately ──────────────
+  // Detach any previous listener to avoid duplicates when admin panel reopens
+  if (_adminSessionsListener) {
+    db.ref('player/sessions').off('value', _adminSessionsListener);
+  }
+  _adminSessionsListener = db.ref('player/sessions').on('value', snap => {
+    const all_sessions = Object.values(snap.val()||{});
+    const active_sessions = all_sessions.filter(s=>s.status==='active');
+    all_sessions.sort((a,b)=>new Date(b.loginTime)-new Date(a.loginTime));
+    const recent = all_sessions.slice(0, 100); // show up to 100 sessions
+    S._allSessions = recent;
+    renderActiveSessions(active_sessions);
+    renderSessionLog(recent);
+    // Keep the user table status dots in sync
+    if (_adminCachedUsers.length) renderUsers(_adminCachedUsers, active_sessions);
+    const filter=document.getElementById('log-filter');
+    if (filter) {
+      const names=[...new Set(recent.map(s=>s.displayName))].sort();
+      const cur = filter.value;
+      filter.innerHTML='<option value="">All Users</option>'+names.map(n=>`<option value="${n}"${n===cur?' selected':''}>${n}</option>`).join('');
+    }
+  });
+
+  // ── Users: live listener so new hosts appear immediately ──────────────────
+  if (_adminUsersListener) {
+    db.ref('player/users').off('value', _adminUsersListener);
+  }
+  _adminUsersListener = db.ref('player/users').on('value', snap => {
+    const users = Object.entries(snap.val()||{}).map(([id,u])=>({id,...u}));
+    _adminCachedUsers = users;
+    const active_sessions = (S._allSessions||[]).filter(s=>s.status==='active');
+    renderUsers(users, active_sessions);
     loadCueOverridesPanel(users);
-  } catch(e){ console.error(e); }
+  });
 }
 
 // Show admin which hosts have set a personal override that differs from the global cue default
@@ -5131,19 +5196,78 @@ function renderSessionLog(sessions) {
 }
 
 function filterLog() {
-  const f=document.getElementById('log-filter').value;
-  renderSessionLog(f?S._allSessions.filter(s=>s.displayName===f):S._allSessions);
+  const f = document.getElementById('log-filter')?.value || '';
+  const q = (document.getElementById('log-search')?.value || '').toLowerCase();
+  let sessions = S._allSessions || [];
+  if (f) sessions = sessions.filter(s => s.displayName === f);
+  if (q) sessions = sessions.filter(s =>
+    (s.displayName||'').toLowerCase().includes(q) ||
+    (s.username||'').toLowerCase().includes(q) ||
+    (s.location||'').toLowerCase().includes(q)
+  );
+  renderSessionLog(sessions);
 }
 
 function renderUsers(users, activeSessions) {
-  const actNames=activeSessions.map(s=>s.username);
-  document.getElementById('adm-users').innerHTML=users.map(u=>`
+  const actNames = activeSessions.map(s => s.username);
+  const q = (document.getElementById('user-search')?.value || '').toLowerCase();
+  const filtered = q ? users.filter(u =>
+    (u.name||'').toLowerCase().includes(q) ||
+    (u.id||'').toLowerCase().includes(q) ||
+    (u.role||'').toLowerCase().includes(q)
+  ) : users;
+  document.getElementById('adm-users').innerHTML = filtered.map(u => `
     <tr>
-      <td>${u.name}</td>
+      <td>
+        <div style="font-family:var(--font-heading);font-size:12px;">${esc(u.name||u.id)}</div>
+        <div style="font-size:10px;color:var(--text3);">@${esc(u.id)}</div>
+      </td>
       <td style="font-size:11px;font-style:italic;">${u.role||'host'}</td>
-      <td>${actNames.includes(u.id)?'<span class="dot-on"></span> Online':'<span class="dot-off"></span> Offline'}</td>
-      <td style="text-align:right;"><button class="t-btn" style="opacity:1;" onclick="deleteUser('${u.id}')">✕</button></td>
+      <td>
+        ${actNames.includes(u.id)
+          ? '<span class="dot-on"></span> Online'
+          : `<span class="dot-off"></span> ${u.active===false ? '<span style="color:var(--danger);font-size:10px;">Inactive</span>' : 'Offline'}`}
+      </td>
+      <td style="text-align:right;display:flex;gap:6px;justify-content:flex-end;align-items:center;padding:8px 0;">
+        <button class="btn-sm" style="font-size:9px;padding:3px 8px;" onclick="openEditUser('${u.id}')">✏ Edit</button>
+        <button class="t-btn" style="opacity:1;" onclick="deleteUser('${u.id}')">✕</button>
+      </td>
     </tr>`).join('');
+}
+
+function filterUsers(q) {
+  const active = (S._allSessions||[]).filter(s=>s.status==='active');
+  renderUsers(_adminCachedUsers, active);
+}
+
+function openEditUser(userId) {
+  const u = _adminCachedUsers.find(u => u.id === userId);
+  if (!u) return;
+  document.getElementById('eu-id').value = userId;
+  document.getElementById('eu-name').value = u.name || '';
+  document.getElementById('eu-pass').value = '';
+  document.getElementById('eu-role').value = u.role || 'host';
+  document.getElementById('tog-eu-active').classList.toggle('on', u.active !== false);
+  openModal('modal-edit-user');
+}
+
+async function saveUserEdit() {
+  const userId = document.getElementById('eu-id').value;
+  if (!userId) return;
+  const name   = document.getElementById('eu-name').value.trim();
+  const pass   = document.getElementById('eu-pass').value;
+  const role   = document.getElementById('eu-role').value;
+  const active = document.getElementById('tog-eu-active').classList.contains('on');
+  if (!name) { toast('Display name cannot be empty'); return; }
+  const updates = { name, role, active };
+  if (pass) updates.password = pass; // only update password if a new one was entered
+  if (db) {
+    try {
+      await db.ref('player/users/' + userId).update(updates);
+      toast('✓ ' + name + ' updated');
+      closeModal('modal-edit-user');
+    } catch(e) { toast('Error: ' + e.message); }
+  }
 }
 
 // Local user store — persists to localStorage when Firebase not configured

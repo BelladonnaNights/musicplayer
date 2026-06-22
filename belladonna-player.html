@@ -2744,12 +2744,6 @@ function plCanEdit(pl) {
 
 async function loadPlaylists() {
   let merged = [];
-  let localBackup = {};
-  try {
-    const local = localStorage.getItem('bella_playlists');
-    if (local) JSON.parse(local).forEach(p => { localBackup[p.id] = p; });
-  } catch(e){}
-
   if (db) {
     try {
       const [bingoSnap, bellaSnap, sharedSnap, mineSnap] = await Promise.all([
@@ -2764,52 +2758,14 @@ async function loadPlaylists() {
       const fromMine   = Object.entries(mineSnap.val()   || {}).map(([id,p])=>({id,...p,scope:'personal',owner:S.user.username}));
       merged = [...fromBingo, ...fromBella, ...fromShared, ...fromMine];
 
-      // Sort by saved `order` field — this was being written on every
-      // sidebar drag-reorder but never actually read back, so the order
-      // always reverted to Firebase's raw object-key order on reload.
-      // Prefer localStorage's order when it has a different sequence for
-      // the same set of IDs, same reasoning as track order below: it's
-      // written synchronously and is the most current intent.
-      const localOrderIds = Object.values(localBackup)
-        .sort((a,b)=>(a.order??0)-(b.order??0))
-        .map(p=>p.id);
-      if (localOrderIds.length) {
-        const byId = new Map(merged.map(p=>[p.id,p]));
-        const ordered = localOrderIds.map(id=>byId.get(id)).filter(Boolean);
-        const remaining = merged.filter(p=>!localOrderIds.includes(p.id));
-        merged = [...ordered, ...remaining];
-        console.log('[Playlist order] Loaded using localStorage order:', merged.map(p=>p.name).join(', '));
-      } else {
-        merged.sort((a,b) => (a.order ?? 0) - (b.order ?? 0));
-        console.log('[Playlist order] Loaded using Firebase order (no local backup found):', merged.map(p=>p.name).join(', '));
-      }
+      // Sort by the `order` field saved to Firebase by savePlOrder().
+      // We no longer use localStorage for playlist order — it shares a quota
+      // with all other apps on this domain and was causing QuotaExceededError
+      // that silently blocked every order save. Firebase has no such limit.
+      merged.sort((a,b) => (a.order ?? 999) - (b.order ?? 999));
+      console.log('[Playlist order] Loaded from Firebase:', merged.map(p=>p.name).join(', '));
 
-      // Re-merge artUrls stripped before saving to Firebase, AND prefer the
-      // localStorage track ORDER if it differs — localStorage is written
-      // synchronously on every drag-drop, so it's the most trustworthy
-      // record of the last order the user actually set, even if a Firebase
-      // write failed or hadn't completed before refresh.
-      merged.forEach(p => {
-        const local = localBackup[p.id];
-        if (local?.tracks?.length === (p.tracks||[]).length) {
-          const localIds = local.tracks.map(t=>t.id).join(',');
-          const fbIds = (p.tracks||[]).map(t=>t.id).join(',');
-          if (localIds !== fbIds) {
-            // Order differs — trust localStorage's order, keep Firebase's track data
-            const byId = new Map((p.tracks||[]).map(t=>[t.id,t]));
-            p.tracks = local.tracks.map(lt => byId.get(lt.id) || lt).filter(Boolean);
-          }
-        }
-        (p.tracks||[]).forEach(t => {
-          const cached = local?.tracks?.find(lt => lt.id === t.id);
-          if (cached?.artUrl) t.artUrl = cached.artUrl;
-        });
-      });
     } catch(e){ console.warn('loadPlaylists Firebase error:', e.message); }
-  }
-
-  if (!merged.length && Object.keys(localBackup).length) {
-    merged = Object.values(localBackup);
   }
 
   S.playlists = merged;
@@ -2917,27 +2873,20 @@ function toggleSectionCollapse(scope) {
 }
 
 async function savePlOrder() {
-  // CRITICAL: assign p.order to every item BEFORE writing to localStorage —
-  // a previous version wrote localStorage first, so it always saved the
-  // OLD order values (or undefined), which is exactly what loadPlaylists()
-  // then trusted as the source of truth on the next load.
+  // Assign order values, then write to Firebase.
+  // localStorage is NOT used for playlist order — it shares a domain-wide
+  // quota with all other apps and was causing QuotaExceededError.
   S.playlists.forEach((p,i)=>{ p.order = i; });
-  try {
-    const data = JSON.stringify(playlistsForLocalStorage());
-    localStorage.setItem('bella_playlists', data);
-    // Immediately verify the write by reading back
-    const verify = JSON.parse(localStorage.getItem('bella_playlists')||'[]');
-    const savedOrder = verify.sort((a,b)=>(a.order??0)-(b.order??0)).map(p=>p.name);
-    console.log('[Playlist order] Saved and verified:', savedOrder.join(', '));
+  if (db) {
+    const writes = S.playlists.map(p =>
+      db.ref(plDbPath(p)+'/order').set(p.order).catch(e =>
+        console.warn('[Playlist order] Firebase save failed for', p.name, e)
+      )
+    );
+    await Promise.all(writes);
+    console.log('[Playlist order] Saved to Firebase:', S.playlists.map(p=>p.name+'='+p.order).join(', '));
     toast('Order saved ✓', 1500);
-  } catch(e){ 
-    console.warn('[Playlist order] localStorage save FAILED:', e);
-    toast('⚠ Order save failed: ' + e.message);
   }
-  if (db) S.playlists.forEach((p)=>{
-    if (!plCanEdit(p)) return; // don't write order for items we can't edit (read-only admin/shared for hosts)
-    db.ref(plDbPath(p)+'/order').set(p.order).catch(e=>console.warn('[Playlist order] Firebase save failed for', p.name, e));
-  });
 }
 
 function showPLMenu(e, plId) {
@@ -3028,7 +2977,7 @@ async function duplicatePL(id) {
     } catch(e){ copy.id='loc_'+Date.now(); }
   } else { copy.id='loc_'+Date.now(); }
   S.playlists.push(copy);
-  try { localStorage.setItem('bella_playlists', JSON.stringify(playlistsForLocalStorage())); } catch(e){}
+  // playlist order stored in Firebase only
   renderSidePlaylists();
   toast('Duplicated to My Playlists as "'+copy.name+'"');
 }
@@ -3063,7 +3012,7 @@ async function deletePL(id) {
   if(!confirm('Delete "'+pl.name+'"? This cannot be undone.')) return;
   S.playlists=S.playlists.filter(p=>p.id!==id);
   if(db){ try{ await db.ref(plDbPath(pl)).remove(); }catch(e){} }
-  try{ localStorage.setItem('bella_playlists',JSON.stringify(playlistsForLocalStorage())); }catch(e){}
+  // playlist order stored in Firebase only
   if(S.currentPL?.id===id){ S.currentPL=null; S.track=null; S.trackIdx=-1; document.getElementById('pl-title').textContent='Select a Playlist'; document.getElementById('pl-meta').textContent='Choose a playlist from the sidebar'; document.getElementById('pl-controls').style.display='none'; document.getElementById('track-list-wrap').innerHTML=''; }
   renderSidePlaylists(); toast('Playlist deleted');
 }
@@ -3573,7 +3522,7 @@ async function createPlaylist() {
     } catch(e){ console.warn('createPlaylist Firebase error:', e.message); }
   } else { pl.id='loc_'+Date.now(); }
   S.playlists.push(pl);
-  try { localStorage.setItem('bella_playlists', JSON.stringify(playlistsForLocalStorage())); } catch(e){}
+  // playlist order stored in Firebase only
   renderSidePlaylists();
   closeModal('modal-new-pl');
   toast('Playlist "' + name + '" created');
@@ -3598,13 +3547,7 @@ function playlistsForLocalStorage() {
 async function savePL(pl) {
   if (!pl?.id) return;
   if (!plCanEdit(pl)) { toast("You don't have permission to edit this playlist"); return; }
-  // Always save full version to localStorage FIRST, as the immediate local
-  // source of truth — this guarantees order survives a refresh even if the
-  // Firebase write below fails for any reason. artUrl is intentionally
-  // excluded — see playlistsForLocalStorage() above.
-  try {
-    localStorage.setItem('bella_playlists', JSON.stringify(playlistsForLocalStorage()));
-  } catch(e){ console.warn('[savePL] localStorage save FAILED:', e); }
+  // Track order and content is stored in Firebase only — see savePlOrder comment.
   if (db) {
     try {
       const { scope, id, ...rest } = pl;

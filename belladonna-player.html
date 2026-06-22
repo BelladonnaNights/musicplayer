@@ -2919,9 +2919,17 @@ async function savePlOrder() {
   // then trusted as the source of truth on the next load.
   S.playlists.forEach((p,i)=>{ p.order = i; });
   try {
-    localStorage.setItem('bella_playlists', JSON.stringify(playlistsForLocalStorage()));
-    console.log('[Playlist order] Saved:', S.playlists.map(p=>p.name+'='+p.order).join(', '));
-  } catch(e){ console.warn('[Playlist order] localStorage save FAILED:', e); }
+    const data = JSON.stringify(playlistsForLocalStorage());
+    localStorage.setItem('bella_playlists', data);
+    // Immediately verify the write by reading back
+    const verify = JSON.parse(localStorage.getItem('bella_playlists')||'[]');
+    const savedOrder = verify.sort((a,b)=>(a.order??0)-(b.order??0)).map(p=>p.name);
+    console.log('[Playlist order] Saved and verified:', savedOrder.join(', '));
+    toast('Order saved ✓', 1500);
+  } catch(e){ 
+    console.warn('[Playlist order] localStorage save FAILED:', e);
+    toast('⚠ Order save failed: ' + e.message);
+  }
   if (db) S.playlists.forEach((p)=>{
     if (!plCanEdit(p)) return; // don't write order for items we can't edit (read-only admin/shared for hosts)
     db.ref(plDbPath(p)+'/order').set(p.order).catch(e=>console.warn('[Playlist order] Firebase save failed for', p.name, e));
